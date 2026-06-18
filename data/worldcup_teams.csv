@@ -1,36 +1,36 @@
 team_id,team,canonical_name,group,qualified_status,source,api_football_team_id,football_data_team_id,confederation,fifa_rank,elo,strength_score,is_host,last_updated
-Czechia,Czechia,Czechia,A,qualified,Cache local: football-data.org,,798.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Mexico,Mexico,Mexico,A,qualified,Cache local: football-data.org,,769.0,,,,,True,2026-06-18T04:14:52.576615+00:00
-South Africa,South Africa,South Africa,A,qualified,Cache local: football-data.org,,774.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-South Korea,South Korea,South Korea,A,qualified,Cache local: football-data.org,,772.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Bosnia and Herzegovina,Bosnia and Herzegovina,Bosnia and Herzegovina,B,qualified,Cache local: football-data.org,,1060.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Canada,Canada,Canada,B,qualified,Cache local: football-data.org,,828.0,,,,,True,2026-06-18T04:14:52.576615+00:00
-Qatar,Qatar,Qatar,B,qualified,Cache local: football-data.org,,8030.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Switzerland,Switzerland,Switzerland,B,qualified,Cache local: football-data.org,,788.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Brazil,Brazil,Brazil,C,qualified,Cache local: football-data.org,,764.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Haiti,Haiti,Haiti,C,qualified,Cache local: football-data.org,,836.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Morocco,Morocco,Morocco,C,qualified,Cache local: football-data.org,,815.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Scotland,Scotland,Scotland,C,qualified,Cache local: football-data.org,,8873.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Australia,Australia,Australia,D,qualified,Cache local: football-data.org,,779.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Paraguay,Paraguay,Paraguay,D,qualified,Cache local: football-data.org,,761.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Turkey,Turkey,Turkey,D,qualified,Cache local: football-data.org,,803.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-United States,United States,United States,D,qualified,Cache local: football-data.org,,771.0,,,,,True,2026-06-18T04:14:52.576615+00:00
+Czechia,Czechia,Czechia,A,qualified,Cache local: football-data.org,,798.0,UEFA,39.0,1785.0,1785.0,False,2026-06-18T05:40:46.496439+00:00
+Mexico,Mexico,Mexico,A,qualified,Cache local: football-data.org,,769.0,CONCACAF,15.0,1840.0,1840.0,True,2026-06-18T05:40:46.496898+00:00
+South Africa,South Africa,South Africa,A,qualified,Cache local: football-data.org,,774.0,CAF,57.0,1580.0,1580.0,False,2026-06-18T05:40:46.497332+00:00
+South Korea,South Korea,South Korea,A,qualified,Cache local: football-data.org,,772.0,AFC,27.0,1760.0,1760.0,False,2026-06-18T05:40:46.497758+00:00
+Bosnia and Herzegovina,Bosnia and Herzegovina,Bosnia and Herzegovina,B,qualified,Cache local: football-data.org,,1060.0,UEFA,69.0,1690.0,1690.0,False,2026-06-18T05:40:46.498199+00:00
+Canada,Canada,Canada,B,qualified,Cache local: football-data.org,,828.0,CONCACAF,30.0,1740.0,1740.0,True,2026-06-18T05:40:46.498848+00:00
+Qatar,Qatar,Qatar,B,qualified,Cache local: football-data.org,,8030.0,AFC,53.0,1605.0,1605.0,False,2026-06-18T05:40:46.499503+00:00
+Switzerland,Switzerland,Switzerland,B,qualified,Cache local: football-data.org,,788.0,UEFA,17.0,1885.0,1885.0,False,2026-06-18T05:40:46.500496+00:00
+Brazil,Brazil,Brazil,C,qualified,Cache local: football-data.org,,764.0,CONMEBOL,3.0,2050.0,2050.0,False,2026-06-18T05:40:46.500963+00:00
+Haiti,Haiti,Haiti,C,qualified,Cache local: football-data.org,,836.0,CONCACAF,86.0,1455.0,1455.0,False,2026-06-18T05:40:46.501358+00:00
+Morocco,Morocco,Morocco,C,qualified,Cache local: football-data.org,,815.0,CAF,14.0,1845.0,1845.0,False,2026-06-18T05:40:46.501883+00:00
+Scotland,Scotland,Scotland,C,qualified,Cache local: football-data.org,,8873.0,UEFA,44.0,1770.0,1770.0,False,2026-06-18T05:40:46.502426+00:00
+Australia,Australia,Australia,D,qualified,Cache local: football-data.org,,779.0,AFC,24.0,1745.0,1745.0,False,2026-06-18T05:40:46.502937+00:00
+Paraguay,Paraguay,Paraguay,D,qualified,Cache local: football-data.org,,761.0,CONMEBOL,37.0,1765.0,1765.0,False,2026-06-18T05:40:46.503180+00:00
+Turkey,Turkey,Turkey,D,qualified,Cache local: football-data.org,,803.0,UEFA,26.0,1825.0,1825.0,False,2026-06-18T05:40:46.503384+00:00
+United States,United States,United States,D,qualified,Cache local: football-data.org,,771.0,CONCACAF,16.0,1810.0,1810.0,True,2026-06-18T05:40:46.503585+00:00
 Curaçao,Curaçao,Curaçao,E,qualified,Cache local: football-data.org,,9460.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Ecuador,Ecuador,Ecuador,E,qualified,Cache local: football-data.org,,791.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Germany,Germany,Germany,E,qualified,Cache local: football-data.org,,759.0,,,,,False,2026-06-18T04:14:52.576615+00:00
+Ecuador,Ecuador,Ecuador,E,qualified,Cache local: football-data.org,,791.0,CONMEBOL,23.0,1850.0,1850.0,False,2026-06-18T05:40:46.504184+00:00
+Germany,Germany,Germany,E,qualified,Cache local: football-data.org,,759.0,UEFA,9.0,1990.0,1990.0,False,2026-06-18T05:40:46.504637+00:00
 Ivory Coast,Ivory Coast,Ivory Coast,E,qualified,Cache local: football-data.org,,1935.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Japan,Japan,Japan,F,qualified,Cache local: football-data.org,,766.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Netherlands,Netherlands,Netherlands,F,qualified,Cache local: football-data.org,,8601.0,,,,,False,2026-06-18T04:14:52.576615+00:00
+Japan,Japan,Japan,F,qualified,Cache local: football-data.org,,766.0,AFC,20.0,1815.0,1815.0,False,2026-06-18T05:40:46.505399+00:00
+Netherlands,Netherlands,Netherlands,F,qualified,Cache local: football-data.org,,8601.0,UEFA,7.0,1980.0,1980.0,False,2026-06-18T05:40:46.505763+00:00
 Sweden,Sweden,Sweden,F,qualified,Cache local: football-data.org,,792.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Tunisia,Tunisia,Tunisia,F,qualified,Cache local: football-data.org,,802.0,,,,,False,2026-06-18T04:14:52.576615+00:00
+Tunisia,Tunisia,Tunisia,F,qualified,Cache local: football-data.org,,802.0,CAF,41.0,1685.0,1685.0,False,2026-06-18T05:40:46.506431+00:00
 Belgium,Belgium,Belgium,G,qualified,Cache local: football-data.org,,805.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Egypt,Egypt,Egypt,G,qualified,Cache local: football-data.org,,825.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Iran,Iran,Iran,G,qualified,Cache local: football-data.org,,840.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-New Zealand,New Zealand,New Zealand,G,qualified,Cache local: football-data.org,,783.0,,,,,False,2026-06-18T04:14:52.576615+00:00
+Egypt,Egypt,Egypt,G,qualified,Cache local: football-data.org,,825.0,CAF,36.0,1725.0,1725.0,False,2026-06-18T05:40:46.507188+00:00
+Iran,Iran,Iran,G,qualified,Cache local: football-data.org,,840.0,AFC,21.0,1775.0,1775.0,False,2026-06-18T05:40:46.507631+00:00
+New Zealand,New Zealand,New Zealand,G,qualified,Cache local: football-data.org,,783.0,OFC,89.0,1490.0,1490.0,False,2026-06-18T05:40:46.508232+00:00
 Cape Verde Islands,Cape Verde Islands,Cape Verde Islands,H,qualified,Cache local: football-data.org,,1930.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Saudi Arabia,Saudi Arabia,Saudi Arabia,H,qualified,Cache local: football-data.org,,801.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Spain,Spain,Spain,H,qualified,Cache local: football-data.org,,760.0,,,,,False,2026-06-18T04:14:52.576615+00:00
-Uruguay,Uruguay,Uruguay,H,qualified,Cache local: football-data.org,,758.0,,,,,False,2026-06-18T04:14:52.576615+00:00
+Saudi Arabia,Saudi Arabia,Saudi Arabia,H,qualified,Cache local: football-data.org,,801.0,AFC,59.0,1600.0,1600.0,False,2026-06-18T05:40:46.508983+00:00
+Spain,Spain,Spain,H,qualified,Cache local: football-data.org,,760.0,UEFA,6.0,2020.0,2020.0,False,2026-06-18T05:40:46.509334+00:00
+Uruguay,Uruguay,Uruguay,H,qualified,Cache local: football-data.org,,758.0,CONMEBOL,11.0,1950.0,1950.0,False,2026-06-18T05:40:46.509669+00:00
 France,France,France,I,qualified,Cache local: football-data.org,,773.0,UEFA,2.0,2090.0,2090.0,False,2026-06-18T04:14:52.576615+00:00
 Iraq,Iraq,Iraq,I,qualified,Cache local: football-data.org,,8062.0,,,,,False,2026-06-18T04:14:52.576615+00:00
 Norway,Norway,Norway,I,qualified,Cache local: football-data.org,,8872.0,,,,,False,2026-06-18T04:14:52.576615+00:00

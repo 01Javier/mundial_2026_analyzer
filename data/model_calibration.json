@@ -1,11 +1,10 @@
 {
-  "home_win_factor": 1.0,
-  "draw_factor": 1.0,
-  "away_win_factor": 1.0,
+  "home_win_factor": 1.0387527603278386,
+  "draw_factor": 1.2,
+  "away_win_factor": 0.8,
   "low_score_draw_factor": 1.0,
-  "active": false,
-  "reason": "Calibracion desactivada por muestra pequena",
-  "matches_used": 0,
-  "last_updated": "2026-06-18T05:23:45.835309+00:00",
-  "total_results_seen": 24
+  "active": true,
+  "reason": "Calibracion activa con muestra suficiente",
+  "matches_used": 24,
+  "last_updated": "2026-06-18T06:13:41.038137+00:00"
 }
