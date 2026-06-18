@@ -57,6 +57,7 @@ RESULT_COLUMNS = [
     "predicted_home_win",
     "predicted_draw",
     "predicted_away_win",
+    "result_source",
 ]
 
 
@@ -98,6 +99,20 @@ def calculate_log_loss_1x2(probs: dict, real_outcome: str, eps: float = 1e-15) -
     prob = float(probs.get(real_outcome, 0) or 0)
     prob = max(eps, min(1 - eps, prob))
     return float(-math.log(prob))
+
+
+def infer_result_source(match: dict) -> str:
+    source = str(match.get("source", "")).lower()
+    match_id = str(match.get("match_id", "")).lower()
+    if "mock" in source or match_id.startswith("mock"):
+        return "mock"
+    if "api-football" in source:
+        return "api_real"
+    if "football-data" in source:
+        return "api_real"
+    if "csv" in source:
+        return "csv_real"
+    return "manual"
 
 
 def save_prediction(match: dict, analysis: dict, source_mode: str):
@@ -187,6 +202,7 @@ def evaluate_prediction(match: dict, analysis: dict):
         "predicted_home_win": probs.get(home),
         "predicted_draw": probs.get(draw),
         "predicted_away_win": probs.get(away),
+        "result_source": infer_result_source(match),
     }
     _write_upsert(RESULTS_PATH, RESULT_COLUMNS, row, "match_id")
     return row

@@ -1,6 +1,13 @@
 import pandas as pd
 import streamlit as st
 
+from src.api_football_team_form import (
+    fetch_h2h_api_football,
+    fetch_injuries_api_football,
+    fetch_lineups_api_football,
+    search_api_football_team_id,
+    update_team_forms_from_api_football,
+)
 from src.backtesting import evaluate_prediction, load_backtest_summary, save_prediction
 from src.cache_store import read_cache_metadata
 from src.calibration import detect_draw_bias, fit_simple_calibration, load_calibration
@@ -28,11 +35,16 @@ with st.sidebar:
     st.write("Mock activo:", settings.use_mock_data)
     st.write("API-Football:", "✅ configurado" if settings.api_football_key else "❌ sin key")
     st.write("football-data.org:", "✅ configurado" if settings.football_data_token else "❌ sin token")
+    st.write("Max requests por ejecución:", settings.max_api_requests_per_run)
     st.caption("Las credenciales no se muestran ni se guardan en cache.")
     refresh_from_api = st.button(
-        "Actualizar datos desde API",
-        help="Usa cuota de API-Football/football-data.org solo cuando presionas este boton.",
+        "Actualizar fixtures desde API-Football",
+        help="Usa API-Football como proveedor principal. football-data.org queda como respaldo si falla.",
         type="primary",
+    )
+    update_missing_forms = st.button(
+        "Actualizar forma de equipos faltantes desde API-Football",
+        help="Busca forma reciente real solo para equipos con fallback o faltantes.",
     )
     cache_metadata = read_cache_metadata()
     if cache_metadata:
@@ -151,6 +163,37 @@ if matches_df.empty:
 catalog_status = refresh_local_team_catalog(matches_df)
 teams_df = load_worldcup_teams()
 
+if update_missing_forms:
+    try:
+        form_df = pd.read_csv("data/team_recent_form.csv")
+        source_col = form_df["source"] if "source" in form_df.columns else pd.Series([""] * len(form_df))
+        estimated_col = form_df["is_estimated"] if "is_estimated" in form_df.columns else pd.Series([""] * len(form_df))
+        confidence_col = form_df["confidence"] if "confidence" in form_df.columns else pd.Series([""] * len(form_df))
+        fallback_mask = (
+            source_col.astype(str).str.contains("fallback", case=False, na=False)
+            | estimated_col.astype(str).str.lower().isin(["true", "1"])
+            | confidence_col.astype(str).str.lower().eq("low")
+        )
+        teams_to_update = form_df.loc[fallback_mask, "team"].dropna().astype(str).head(
+            max(1, settings.max_api_requests_per_run // 2)
+        ).tolist()
+        if not teams_to_update:
+            st.info("No hay equipos fallback pendientes para actualizar.")
+        else:
+            result = update_team_forms_from_api_football(
+                teams_to_update,
+                last=10,
+                max_requests=settings.max_api_requests_per_run,
+            )
+            st.success(
+                f"Forma actualizada desde API-Football: {len(result['updated'])} equipos. "
+                f"Requests usados: {result['requests_used']}."
+            )
+            if result["errors"]:
+                st.warning("; ".join(result["errors"][:5]))
+    except Exception as exc:
+        st.error(f"No se pudo actualizar forma desde API-Football: {exc}")
+
 with st.expander("Catalogo local de equipos y estadisticas"):
     st.write(f"Equipos en catalogo: **{catalog_status['teams_count']}**")
     if catalog_status["fallback_added"]:
@@ -199,6 +242,96 @@ if manual_text.strip():
 
 if not selected_numbers:
     st.stop()
+
+selected_match_for_updates = matches_df.reset_index(drop=True).iloc[selected_numbers[0] - 1].to_dict()
+
+with st.sidebar:
+    st.divider()
+    st.markdown("### Partido seleccionado")
+    st.caption(
+        f"{selected_match_for_updates.get('home', 'N/D')} vs "
+        f"{selected_match_for_updates.get('away', 'N/D')}"
+    )
+    update_selected_forms = st.button(
+        "Actualizar datos reales de estos equipos desde API-Football",
+        help="Actualiza solo la forma reciente de los dos equipos seleccionados.",
+    )
+    update_selected_h2h = st.button("Actualizar H2H del partido seleccionado")
+    update_selected_injuries = st.button("Actualizar lesiones del partido seleccionado")
+    update_selected_lineups = st.button("Actualizar lineups del partido seleccionado")
+
+if update_selected_forms:
+    teams = [selected_match_for_updates["home"], selected_match_for_updates["away"]]
+    try:
+        result = update_team_forms_from_api_football(
+            teams,
+            last=10,
+            max_requests=settings.max_api_requests_per_run,
+        )
+        st.success(
+            f"Forma actualizada desde API-Football: {', '.join(result['updated']) or 'ningun equipo'}. "
+            f"Requests usados: {result['requests_used']}."
+        )
+        if result["errors"]:
+            st.warning("; ".join(result["errors"][:5]))
+    except Exception as exc:
+        st.error(f"No se pudo actualizar forma real desde API-Football: {exc}")
+
+if update_selected_h2h:
+    try:
+        home_id = search_api_football_team_id(selected_match_for_updates["home"])
+        away_id = search_api_football_team_id(selected_match_for_updates["away"])
+        if not home_id or not away_id:
+            st.warning("No se pudo resolver el ID API-Football de ambos equipos.")
+        else:
+            result = fetch_h2h_api_football(home_id, away_id)
+            st.success(f"H2H actualizado. Filas guardadas: {result['rows']}. Requests usados: {result['requests_used']}.")
+    except Exception as exc:
+        st.error(f"No se pudo actualizar H2H desde API-Football: {exc}")
+
+fixture_id = selected_match_for_updates.get("match_id")
+try:
+    fixture_id = int(float(fixture_id))
+except Exception:
+    fixture_id = None
+
+if update_selected_injuries:
+    if fixture_id is None:
+        st.warning("Este partido no tiene match_id/fixture_id compatible con API-Football.")
+    else:
+        try:
+            result = fetch_injuries_api_football(fixture_id)
+            st.success(
+                f"Lesiones actualizadas. Filas guardadas: {result['rows']}. "
+                f"Requests usados: {result['requests_used']}."
+            )
+        except Exception as exc:
+            st.error(f"No se pudieron actualizar lesiones desde API-Football: {exc}")
+
+if update_selected_lineups:
+    if fixture_id is None:
+        st.warning("Este partido no tiene match_id/fixture_id compatible con API-Football.")
+    else:
+        status_text = str(selected_match_for_updates.get("status", "")).strip().lower()
+        lineup_allowed = status_text in {"jugado", "en vivo", "live", "in play", "playing"}
+        if not lineup_allowed:
+            try:
+                match_dt = pd.to_datetime(selected_match_for_updates.get("date_utc"), utc=True)
+                hours_to_match = (match_dt - pd.Timestamp.utcnow()).total_seconds() / 3600
+                lineup_allowed = -6 <= hours_to_match <= 24
+            except Exception:
+                lineup_allowed = False
+        if not lineup_allowed:
+            st.warning("Lineups solo se consultan si el partido esta en curso, jugado o dentro de 24 horas.")
+        else:
+            try:
+                result = fetch_lineups_api_football(fixture_id)
+                st.success(
+                    f"Lineups consultados. Bloques recibidos: {result['lineups']}. "
+                    f"Requests usados: {result['requests_used']}."
+                )
+            except Exception as exc:
+                st.error(f"No se pudieron actualizar lineups desde API-Football: {exc}")
 
 st.markdown("## PASO 2 — RECOLECCIÓN DE DATOS")
 st.write(

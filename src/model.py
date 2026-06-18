@@ -3,19 +3,19 @@ import numpy as np
 import pandas as pd
 from scipy.stats import poisson
 
-from .backtesting import calculate_brier_score_1x2, calculate_log_loss_1x2
-from .calibration import apply_1x2_calibration, load_calibration
+from .backtesting import calculate_brier_score_1x2, calculate_log_loss_1x2, load_backtest_summary
+from .calibration import apply_1x2_calibration, apply_draw_bias_correction, detect_draw_bias, load_calibration
 from .config import settings
 from .dixon_coles import poisson_score_matrix_dc
 from .data_sources import (
     get_team_recent_form,
-    get_team_strength,
     get_h2h,
     get_player_form,
     get_injuries,
     get_group_table,
     get_stadium_info,
 )
+from .team_strength import get_team_strength, strength_adjustment as team_strength_adjustment
 from .utils import clamp, confidence_label, poisson_first_goal_probs, safe_int
 
 HOST_TEAMS = {
@@ -110,14 +110,48 @@ def global_average_goals() -> float:
 
 
 def strength_adjustment(team: str, opponent: str) -> tuple[float, str | None]:
-    team_strength = get_team_strength(team)
-    opp_strength = get_team_strength(opponent)
-    if not team_strength or not opp_strength:
+    adjustment = team_strength_adjustment(team, opponent)
+    if adjustment == 0:
         return 1.0, None
-
-    diff = team_strength["strength_score"] - opp_strength["strength_score"]
-    adjustment = clamp(diff / 400, -0.12, 0.12)
     return 1 + adjustment, f"Fuerza relativa {team}: ajuste {adjustment:+.1%} vs {opponent}."
+
+
+def build_fallback_form(team: str, opponent: str, reason: str):
+    avg = global_average_goals()
+    adjustment = team_strength_adjustment(team, opponent)
+    if adjustment == 0:
+        team_hash = sum((idx + 1) * ord(char) for idx, char in enumerate(team.lower()))
+        opp_hash = sum((idx + 1) * ord(char) for idx, char in enumerate(opponent.lower()))
+        if team_hash != opp_hash:
+            adjustment = clamp((team_hash - opp_hash) / max(team_hash + opp_hash, 1), -0.03, 0.03)
+    gf = clamp(avg * (1 + adjustment), 0.80, 2.10)
+    ga = clamp(avg * (1 - adjustment), 0.80, 2.10)
+    strength = get_team_strength(team)
+    return {
+        "team": team,
+        "matches": 3,
+        "gf_per_match": gf,
+        "ga_per_match": ga,
+        "wins": 1,
+        "draws": 1,
+        "losses": 1,
+        "xg_for": None,
+        "xg_against": None,
+        "home_gf": gf,
+        "home_ga": ga,
+        "away_gf": gf * 0.95,
+        "away_ga": ga * 1.05,
+        "clean_sheets": None,
+        "failed_to_score": None,
+        "over_2_5_rate": None,
+        "both_teams_score_rate": None,
+        "source": "model_fallback",
+        "data_quality": "low",
+        "confidence": "low",
+        "is_estimated": True,
+        "reason": reason,
+        "strength_available": strength is not None,
+    }
 
 
 def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
@@ -133,10 +167,10 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
 
     if team_form is None:
         missing.append(f"forma reciente de {team}")
+        team_form = build_fallback_form(team, opponent, "sin forma reciente API/CSV")
     if opp_form is None:
         missing.append(f"forma reciente de {opponent}")
-    if team_form is None or opp_form is None:
-        return None, missing, info
+        opp_form = build_fallback_form(opponent, team, "sin forma reciente API/CSV")
 
     if team_form.get("data_quality") == "low":
         missing.append(f"forma estimada de {team}")
@@ -153,14 +187,32 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
 
     if has_xg:
         base_lambda = (
-            0.40 * float(team_xg) +
+            0.35 * float(team_xg) +
             0.25 * float(opp_xga) +
             0.20 * team_gf +
-            0.15 * opp_ga
+            0.20 * opp_ga
         )
         method = "xG/xGA + goles + shrinkage"
     else:
-        base_lambda = 0.55 * team_gf + 0.45 * opp_ga
+        over_values = [
+            value
+            for value in [team_form.get("over_2_5_rate"), opp_form.get("over_2_5_rate")]
+            if value is not None
+        ]
+        btts_values = [
+            value
+            for value in [team_form.get("both_teams_score_rate"), opp_form.get("both_teams_score_rate")]
+            if value is not None
+        ]
+        over_component = float(np.mean(over_values)) if over_values else 0.45
+        btts_component = float(np.mean(btts_values)) if btts_values else 0.45
+        base_lambda = (
+            0.35 * team_gf +
+            0.30 * opp_ga +
+            0.15 * global_average_goals() +
+            0.10 * (0.8 + over_component) +
+            0.10 * (0.8 + btts_component)
+        )
         method = "goles recientes + shrinkage"
         missing.append("xG/xGA")
 
@@ -197,6 +249,24 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
         except Exception:
             pass
 
+    opp_clean_sheets = opp_form.get("clean_sheets")
+    team_failed_to_score = team_form.get("failed_to_score")
+    if opp_clean_sheets is not None and opp_clean_sheets > 0.45:
+        expected *= 0.92
+        factors.append(f"{opponent}: alta tasa de porterias a cero, reduce lambda de {team}.")
+    if team_failed_to_score is not None and team_failed_to_score > 0.35:
+        expected *= 0.90
+        factors.append(f"{team}: alta tasa sin anotar, reduce lambda propia.")
+    team_over = team_form.get("over_2_5_rate")
+    opp_over = opp_form.get("over_2_5_rate")
+    if team_over is not None and opp_over is not None and team_over > 0.55 and opp_over > 0.55:
+        expected *= 1.06
+        factors.append("Ambos equipos muestran tendencia over 2.5; sube total de goles.")
+    team_btts = team_form.get("both_teams_score_rate")
+    opp_btts = opp_form.get("both_teams_score_rate")
+    if team_btts is not None and opp_btts is not None and team_btts > 0.60 and opp_btts > 0.60:
+        factors.append("BTTS alto: se informa como correlacion, sin forzar 1-1.")
+
     if team.lower() in HOST_TEAMS:
         expected *= 1.04
         factors.append(f"{team} recibe ajuste ligero de anfitrion/localia.")
@@ -211,6 +281,10 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
             "base_lambda": base_lambda,
             "global_avg_goals": avg_goals,
             "advanced_factors": factors,
+            "is_fallback": bool(team_form.get("is_estimated") or team_form.get("data_quality") == "low"),
+            "form_source": team_form.get("source", "N/D"),
+            "form_confidence": team_form.get("confidence", "medium"),
+            "strength_available": get_team_strength(team) is not None,
         }
     )
     return clamp(expected, 0.15, 4.50), missing, info
@@ -300,12 +374,33 @@ def apply_context_adjustments(lambda_home, lambda_away, match, injuries):
 
     return clamp(lambda_home, 0.15, 4.50), clamp(lambda_away, 0.15, 4.50), factors
 
-def poisson_score_matrix(lambda_home, lambda_away, max_goals=8):
+def fit_or_select_dixon_coles_rho(results_df: pd.DataFrame) -> tuple[float, str]:
+    if not settings.use_dixon_coles:
+        return 0.0, "Dixon-Coles desactivado"
+    valid_results = results_df
+    if (
+        settings.ignore_mock_results_for_calibration
+        and results_df is not None
+        and not results_df.empty
+        and "result_source" in results_df.columns
+    ):
+        valid_results = results_df[
+            results_df["result_source"].fillna("mock").astype(str).isin(["api_real", "csv_real", "manual"])
+        ].copy()
+    if valid_results is None or valid_results.empty or len(valid_results) < 30:
+        return 0.0, "Muestra insuficiente para usar rho agresivo"
+    bias = detect_draw_bias(valid_results)
+    if settings.disable_dc_if_draw_bias_high and bias.get("draw_bias_level") == "Alto":
+        return max(settings.dixon_coles_rho, 0.0), "Rho no negativo porque se detecto sesgo alto de empate"
+    return settings.dixon_coles_rho, "Rho configurado"
+
+
+def poisson_score_matrix(lambda_home, lambda_away, max_goals=8, rho: float | None = None):
     if settings.use_dixon_coles:
         return poisson_score_matrix_dc(
             lambda_home,
             lambda_away,
-            rho=settings.dixon_coles_rho,
+            rho=settings.dixon_coles_rho if rho is None else rho,
             max_goals=max_goals,
         )
 
@@ -316,13 +411,38 @@ def poisson_score_matrix(lambda_home, lambda_away, max_goals=8):
     coverage = sum(matrix.values())
     return matrix, coverage
 
-def top_scorelines(lambda_home, lambda_away, home, away, top_n=5):
-    matrix, coverage = poisson_score_matrix(lambda_home, lambda_away)
+def scoreline_type(hg, ag, lambda_home, lambda_away, match_context):
+    if match_context.get("low_confidence"):
+        return "Baja confianza"
+    total_lambda = lambda_home + lambda_away
+    diff = abs(lambda_home - lambda_away)
+    if hg == ag and hg <= 1:
+        return "Empate bajo"
+    if total_lambda >= 3.2 and max(hg, ag) >= 3:
+        return "Partido abierto"
+    if diff >= 0.45 and abs(hg - ag) >= 2:
+        return "Favorito fuerte"
+    if abs(hg - ag) == 1:
+        return "Victoria minima"
+    return "Partido abierto" if total_lambda >= 2.8 else "Balanceado"
 
+
+def rank_scorelines_with_context(matrix, lambda_home, lambda_away, match_context):
     ordered = sorted(matrix.items(), key=lambda x: x[1], reverse=True)
+    return [
+        (score, prob, scoreline_type(score[0], score[1], lambda_home, lambda_away, match_context))
+        for score, prob in ordered
+    ]
+
+
+def top_scorelines(lambda_home, lambda_away, home, away, top_n=5, rho: float | None = None, match_context: dict | None = None):
+    matrix, coverage = poisson_score_matrix(lambda_home, lambda_away, rho=rho)
+
+    match_context = match_context or {}
+    ordered = rank_scorelines_with_context(matrix, lambda_home, lambda_away, match_context)
     results = []
 
-    for rank, ((hg, ag), p) in enumerate(ordered[:top_n], start=1):
+    for rank, ((hg, ag), p, kind) in enumerate(ordered[:top_n], start=1):
         if hg > ag:
             note = f"ventaja de {home}"
         elif ag > hg:
@@ -334,6 +454,7 @@ def top_scorelines(lambda_home, lambda_away, home, away, top_n=5):
             "#": rank,
             "Resultado": f"{hg} - {ag}",
             "Probabilidad": p,
+            "Tipo": kind,
             "Justificación": f"λ {home}={lambda_home:.2f}, λ {away}={lambda_away:.2f}; {note}.",
         })
 
@@ -359,18 +480,18 @@ def outcome_probabilities_from_matrix(matrix: dict):
     return None, None, None
 
 
-def outcome_probabilities(lambda_home, lambda_away, max_goals=12):
-    matrix, _ = poisson_score_matrix(lambda_home, lambda_away, max_goals=max_goals)
+def outcome_probabilities(lambda_home, lambda_away, max_goals=12, rho: float | None = None):
+    matrix, _ = poisson_score_matrix(lambda_home, lambda_away, max_goals=max_goals, rho=rho)
     return outcome_probabilities_from_matrix(matrix)
 
 
-def simulate_match_monte_carlo(lambda_home, lambda_away, n=20000, use_dc=False):
+def simulate_match_monte_carlo(lambda_home, lambda_away, n=20000, use_dc=False, rho: float | None = None):
     n = max(1000, int(n or 20000))
     seed = int((lambda_home * 1000) + (lambda_away * 10000)) % (2**32 - 1)
     rng = np.random.default_rng(seed)
 
     if use_dc:
-        matrix, _ = poisson_score_matrix(lambda_home, lambda_away, max_goals=8)
+        matrix, _ = poisson_score_matrix(lambda_home, lambda_away, max_goals=8, rho=rho)
         score_items = list(matrix.items())
         probabilities = np.array([max(0.0, prob) for _, prob in score_items], dtype=float)
         probabilities = probabilities / probabilities.sum()
@@ -499,8 +620,24 @@ def analyze_match(match: dict) -> dict:
     injuries = get_injuries(home, away)
     lambda_home, lambda_away, context_factors = apply_context_adjustments(lambda_home, lambda_away, match, injuries)
 
-    top_results, coverage = top_scorelines(lambda_home, lambda_away, home, away)
-    p_home, p_draw, p_away = outcome_probabilities(lambda_home, lambda_away)
+    backtest_summary = load_backtest_summary()
+    bias_report = detect_draw_bias(backtest_summary["results_df"])
+    effective_rho, rho_reason = fit_or_select_dixon_coles_rho(backtest_summary["results_df"])
+    both_fallback = bool(home_info.get("is_fallback") and away_info.get("is_fallback"))
+    match_context = {
+        "fallback": both_fallback,
+        "low_confidence": both_fallback,
+        "bias_report": bias_report,
+    }
+    top_results, coverage = top_scorelines(
+        lambda_home,
+        lambda_away,
+        home,
+        away,
+        rho=effective_rho,
+        match_context=match_context,
+    )
+    p_home, p_draw, p_away = outcome_probabilities(lambda_home, lambda_away, rho=effective_rho)
     direct_winner_probs = {
         home: p_home,
         "Empate": p_draw,
@@ -508,6 +645,7 @@ def analyze_match(match: dict) -> dict:
     }
     calibration = load_calibration()
     winner_probs = apply_1x2_calibration(direct_winner_probs, calibration)
+    winner_probs = apply_draw_bias_correction(winner_probs, bias_report)
 
     p_home_first, p_away_first, p_no_goal = poisson_first_goal_probs(lambda_home, lambda_away)
 
@@ -530,8 +668,17 @@ def analyze_match(match: dict) -> dict:
         data_score -= 0.10
     if coverage < 0.97:
         data_score -= 0.05
+    if both_fallback:
+        data_score = min(data_score, 0.50)
 
     data_score = clamp(data_score, 0.25, 1.0)
+    warnings = []
+    if both_fallback:
+        warnings.append("Predicción basada en fallback. No usar como pronóstico fuerte.")
+    if abs(lambda_home - lambda_away) < 0.05 and data_score < 0.65:
+        warnings.append(
+            "El modelo igualó demasiado a los equipos por falta de datos; considera actualizar forma real desde API-Football."
+        )
 
     factors = [
         f"Expectativa de goles: {home} {lambda_home:.2f} vs {away} {lambda_away:.2f}.",
@@ -543,6 +690,7 @@ def analyze_match(match: dict) -> dict:
     factors.extend(home_info.get("advanced_factors", [])[:2])
     factors.extend(away_info.get("advanced_factors", [])[:2])
     factors.extend(context_factors)
+    factors.extend(warnings)
 
     monte_carlo = None
     if settings.use_monte_carlo:
@@ -551,6 +699,7 @@ def analyze_match(match: dict) -> dict:
             lambda_away,
             n=settings.monte_carlo_sims,
             use_dc=settings.use_dixon_coles,
+            rho=effective_rho,
         )
 
     return {
@@ -579,9 +728,28 @@ def analyze_match(match: dict) -> dict:
         "players": player_df,
         "coverage": coverage,
         "model_name": "Poisson + Dixon-Coles" if settings.use_dixon_coles else "Poisson simple",
+        "configured_rho": settings.dixon_coles_rho,
+        "effective_rho": effective_rho,
+        "rho_reason": rho_reason,
         "calibration": calibration,
         "calibration_active": bool(calibration.get("active")),
         "monte_carlo": monte_carlo,
+        "warnings": warnings,
+        "bias_report": bias_report,
+        "team_data": {
+            home: {
+                "source": home_info.get("form_source", "N/D"),
+                "confidence": home_info.get("form_confidence", "N/D"),
+                "is_fallback": home_info.get("is_fallback", False),
+                "strength_available": home_info.get("strength_available", False),
+            },
+            away: {
+                "source": away_info.get("form_source", "N/D"),
+                "confidence": away_info.get("form_confidence", "N/D"),
+                "is_fallback": away_info.get("is_fallback", False),
+                "strength_available": away_info.get("strength_available", False),
+            },
+        },
     }
 
 def evaluate_played_match(match: dict, analysis: dict) -> dict | None:

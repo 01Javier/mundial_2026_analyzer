@@ -3,6 +3,8 @@ import pandas as pd
 
 from .clients import api_football_get, football_data_get, open_meteo_forecast
 from .cache_store import (
+    cache_path,
+    get_cache_age_minutes,
     increment_requests_saved,
     load_json_cache,
     metadata_for_cache,
@@ -11,7 +13,7 @@ from .cache_store import (
 )
 from .config import settings
 from .mock_data import mock_worldcup_matches
-from .team_registry import get_team_fallback_recent_form
+from .team_registry import get_team_fallback_recent_form, save_latest_matches_cache
 from .utils import normalize_team_name, gt_time_from_utc
 
 DATA_DIR = Path("data")
@@ -119,25 +121,161 @@ def _with_source(df: pd.DataFrame, source: str) -> pd.DataFrame:
     return view
 
 
-def _load_cached_fixtures() -> tuple[pd.DataFrame, list[str]] | None:
+def _cache_mode(name: str, max_age_minutes: int = API_CACHE_TTL_MINUTES) -> tuple[str, float | None]:
+    path = cache_path(name, "json")
+    age = get_cache_age_minutes(path)
+    if age is None:
+        return "missing", None
+    return ("cache_fresh" if age <= max_age_minutes else "cache_stale"), age
+
+
+def _fixture_metadata(provider, endpoint, params, source_file, mode, requests_used_now, last_error=None):
+    cache_age = get_cache_age_minutes(source_file)
+    now = pd.Timestamp.utcnow()
+    return {
+        "provider": provider,
+        "endpoint": endpoint,
+        "params": params,
+        "mode": mode,
+        "requests_used_now": requests_used_now,
+        "cached_at": None if cache_age is None else now.isoformat(),
+        "expires_at": (now + pd.Timedelta(minutes=API_CACHE_TTL_MINUTES)).isoformat(),
+        "cache_age_minutes": cache_age,
+        "source_file": str(source_file),
+        "requests_saved": 0,
+        "last_error": last_error,
+    }
+
+
+def _from_api_football_cache(allow_stale: bool = False) -> tuple[pd.DataFrame, list[str], dict] | None:
+    mode, age = _cache_mode(API_FOOTBALL_FIXTURES_CACHE)
+    if mode == "missing" or (mode == "cache_stale" and not allow_stale):
+        return None
     raw = load_json_cache(API_FOOTBALL_FIXTURES_CACHE)
-    if raw:
-        df = normalize_api_football_fixtures(raw)
-        if not df.empty:
-            increment_requests_saved(API_FOOTBALL_FIXTURES_CACHE)
-            return _with_source(df, "Cache local: API-Football"), [
-                f"Cache local: data/cache/{API_FOOTBALL_FIXTURES_CACHE}.json"
-            ]
+    if not raw:
+        return None
+    df = normalize_api_football_fixtures(raw)
+    if df.empty:
+        return None
+    increment_requests_saved(API_FOOTBALL_FIXTURES_CACHE)
+    source = f"Cache local API-Football ({mode})"
+    return _with_source(df, source), [f"{source}: data/cache/{API_FOOTBALL_FIXTURES_CACHE}.json"], {
+        "provider": "API-Football",
+        "mode": mode,
+        "requests_used_now": 0,
+        "cache_age_minutes": age,
+    }
 
+
+def _from_football_data_cache(allow_stale: bool = False) -> tuple[pd.DataFrame, list[str], dict] | None:
+    mode, age = _cache_mode(FOOTBALL_DATA_MATCHES_CACHE)
+    if mode == "missing" or (mode == "cache_stale" and not allow_stale):
+        return None
     raw = load_json_cache(FOOTBALL_DATA_MATCHES_CACHE)
-    if raw:
-        df = normalize_football_data_matches(raw)
-        if not df.empty:
-            increment_requests_saved(FOOTBALL_DATA_MATCHES_CACHE)
-            return _with_source(df, "Cache local: football-data.org"), [
-                f"Cache local: data/cache/{FOOTBALL_DATA_MATCHES_CACHE}.json"
-            ]
+    if not raw:
+        return None
+    df = normalize_football_data_matches(raw)
+    if df.empty:
+        return None
+    increment_requests_saved(FOOTBALL_DATA_MATCHES_CACHE)
+    source = f"Cache local football-data.org ({mode})"
+    return _with_source(df, source), [f"{source}: data/cache/{FOOTBALL_DATA_MATCHES_CACHE}.json"], {
+        "provider": "football-data.org",
+        "mode": mode,
+        "requests_used_now": 0,
+        "cache_age_minutes": age,
+    }
 
+
+def fetch_fixtures_api_football(force_refresh: bool = False):
+    endpoint = "/fixtures"
+    params = {
+        "league": settings.api_football_world_cup_league_id,
+        "season": settings.api_football_season,
+        "timezone": "America/Guatemala",
+    }
+
+    if not force_refresh:
+        cached = _from_api_football_cache(allow_stale=False)
+        if cached:
+            return cached
+
+    if not force_refresh or not settings.api_football_key:
+        return None
+
+    raw = api_football_get(endpoint, params=params)
+    cache_file = save_json_cache(API_FOOTBALL_FIXTURES_CACHE, raw)
+    df = normalize_api_football_fixtures(raw)
+    if not df.empty:
+        save_latest_matches_cache(_with_source(df, "API en vivo: API-Football"))
+    update_cache_metadata(
+        API_FOOTBALL_FIXTURES_CACHE,
+        _fixture_metadata(
+            provider="API-Football",
+            endpoint=endpoint,
+            params=params,
+            source_file=cache_file,
+            mode="api_live",
+            requests_used_now=1,
+        ),
+    )
+    if df.empty:
+        return None
+    return _with_source(df, "API en vivo: API-Football"), ["API en vivo: API-Football"], {
+        "provider": "API-Football",
+        "mode": "api_live",
+        "requests_used_now": 1,
+        "cache_age_minutes": 0,
+    }
+
+
+def fetch_fixtures_football_data(force_refresh: bool = False):
+    endpoint = f"/competitions/{settings.football_data_competition}/matches"
+    params = {"season": settings.football_data_season}
+
+    if not force_refresh:
+        cached = _from_football_data_cache(allow_stale=False)
+        if cached:
+            return cached
+
+    if not force_refresh or not settings.football_data_token:
+        return None
+
+    raw = football_data_get(endpoint, params=params)
+    cache_file = save_json_cache(FOOTBALL_DATA_MATCHES_CACHE, raw)
+    df = normalize_football_data_matches(raw)
+    if not df.empty:
+        save_latest_matches_cache(_with_source(df, "API en vivo: football-data.org"))
+    update_cache_metadata(
+        FOOTBALL_DATA_MATCHES_CACHE,
+        _fixture_metadata(
+            provider="football-data.org",
+            endpoint=endpoint,
+            params=params,
+            source_file=cache_file,
+            mode="api_live",
+            requests_used_now=1,
+        ),
+    )
+    if df.empty:
+        return None
+    return _with_source(df, "API en vivo: football-data.org"), ["API en vivo: football-data.org"], {
+        "provider": "football-data.org",
+        "mode": "api_live",
+        "requests_used_now": 1,
+        "cache_age_minutes": 0,
+    }
+
+
+def _load_cached_fixtures() -> tuple[pd.DataFrame, list[str]] | None:
+    for loader in [_from_api_football_cache, _from_football_data_cache]:
+        cached = loader(allow_stale=False)
+        if cached:
+            return cached[0], cached[1]
+    for loader in [_from_api_football_cache, _from_football_data_cache]:
+        cached = loader(allow_stale=True)
+        if cached:
+            return cached[0], cached[1]
     return None
 
 
@@ -150,6 +288,7 @@ def fetch_sports_data(dataset: str = "fixtures", refresh: bool = False) -> tuple
         raise ValueError("Por ahora solo se soporta dataset='fixtures'")
 
     errors = []
+    refresh = bool(refresh)
 
     if not refresh:
         cached = _load_cached_fixtures()
@@ -168,28 +307,9 @@ def fetch_sports_data(dataset: str = "fixtures", refresh: bool = False) -> tuple
         return pd.DataFrame(), [], errors
 
     try:
-        if settings.api_football_key:
-            endpoint = "/fixtures"
-            params = {
-                "league": settings.api_football_world_cup_league_id,
-                "season": settings.api_football_season,
-                "timezone": "America/Guatemala",
-            }
-            raw = api_football_get(endpoint, params=params)
-            cache_file = save_json_cache(API_FOOTBALL_FIXTURES_CACHE, raw)
-            update_cache_metadata(
-                API_FOOTBALL_FIXTURES_CACHE,
-                metadata_for_cache(
-                    provider="API-Football",
-                    endpoint=endpoint,
-                    params=params,
-                    source_file=cache_file,
-                    ttl_minutes=API_CACHE_TTL_MINUTES,
-                ),
-            )
-            df = normalize_api_football_fixtures(raw)
-            if not df.empty:
-                return _with_source(df, "API en vivo: API-Football"), ["API en vivo: API-Football"], errors
+        live = fetch_fixtures_api_football(force_refresh=True)
+        if live is not None:
+            return live[0], live[1], errors
     except Exception as exc:
         errors.append(f"API-Football: {exc}")
         update_cache_metadata(
@@ -211,24 +331,9 @@ def fetch_sports_data(dataset: str = "fixtures", refresh: bool = False) -> tuple
         )
 
     try:
-        if settings.football_data_token:
-            endpoint = f"/competitions/{settings.football_data_competition}/matches"
-            params = {"season": settings.football_data_season}
-            raw = football_data_get(endpoint, params=params)
-            cache_file = save_json_cache(FOOTBALL_DATA_MATCHES_CACHE, raw)
-            update_cache_metadata(
-                FOOTBALL_DATA_MATCHES_CACHE,
-                metadata_for_cache(
-                    provider="football-data.org",
-                    endpoint=endpoint,
-                    params=params,
-                    source_file=cache_file,
-                    ttl_minutes=API_CACHE_TTL_MINUTES,
-                ),
-            )
-            df = normalize_football_data_matches(raw)
-            if not df.empty:
-                return _with_source(df, "API en vivo: football-data.org"), ["API en vivo: football-data.org"], errors
+        live = fetch_fixtures_football_data(force_refresh=True)
+        if live is not None:
+            return live[0], live[1], errors
     except Exception as exc:
         errors.append(f"football-data.org: {exc}")
         update_cache_metadata(
@@ -281,6 +386,17 @@ def _recent_form_record(team: str, r: dict) -> dict | None:
     matches = float(r.get("matches", 0) or 0)
     if matches <= 0:
         return None
+    is_low_quality = str(r.get("data_quality", "")).lower() == "low" or str(r.get("is_estimated", "")).lower() in ["true", "1"]
+
+    def optional_float(value):
+        if value is None or pd.isna(value):
+            return None
+        if str(value).strip() == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     return {
         "team": team,
@@ -290,14 +406,20 @@ def _recent_form_record(team: str, r: dict) -> dict | None:
         "wins": int(float(r.get("wins", 0) or 0)),
         "draws": int(float(r.get("draws", 0) or 0)),
         "losses": int(float(r.get("losses", 0) or 0)),
-        "xg_for": None if pd.isna(r.get("xg_for", None)) else float(r.get("xg_for")),
-        "xg_against": None if pd.isna(r.get("xg_against", None)) else float(r.get("xg_against")),
-        "home_gf": None if pd.isna(r.get("home_gf", None)) else float(r.get("home_gf")),
-        "home_ga": None if pd.isna(r.get("home_ga", None)) else float(r.get("home_ga")),
-        "away_gf": None if pd.isna(r.get("away_gf", None)) else float(r.get("away_gf")),
-        "away_ga": None if pd.isna(r.get("away_ga", None)) else float(r.get("away_ga")),
+        "xg_for": None if is_low_quality else optional_float(r.get("xg_for")),
+        "xg_against": None if is_low_quality else optional_float(r.get("xg_against")),
+        "home_gf": optional_float(r.get("home_gf")),
+        "home_ga": optional_float(r.get("home_ga")),
+        "away_gf": optional_float(r.get("away_gf")),
+        "away_ga": optional_float(r.get("away_ga")),
+        "clean_sheets": optional_float(r.get("clean_sheets")),
+        "failed_to_score": optional_float(r.get("failed_to_score")),
+        "over_2_5_rate": optional_float(r.get("over_2_5_rate")),
+        "both_teams_score_rate": optional_float(r.get("both_teams_score_rate")),
         "source": r.get("source", "team_recent_form.csv"),
         "data_quality": r.get("data_quality", "normal"),
+        "confidence": r.get("confidence", "medium"),
+        "is_estimated": is_low_quality,
     }
 
 
@@ -341,6 +463,13 @@ def calculate_weighted_recent_form(team, half_life_days=180):
 
     goals_for = pd.to_numeric(team_df["goals_for"], errors="coerce")
     goals_against = pd.to_numeric(team_df["goals_against"], errors="coerce")
+    valid_scores = goals_for.notna() & goals_against.notna()
+    valid_weights = team_df.loc[valid_scores, "weight"]
+
+    def weighted_rate(mask):
+        if valid_weights.empty or valid_weights.sum() <= 0:
+            return None
+        return float((mask.loc[valid_scores].astype(float) * valid_weights).sum() / valid_weights.sum())
 
     return {
         "team": team,
@@ -356,7 +485,14 @@ def calculate_weighted_recent_form(team, half_life_days=180):
         "home_ga": None,
         "away_gf": None,
         "away_ga": None,
-        "form_source": "team_match_history.csv",
+        "clean_sheets": weighted_rate(goals_against == 0),
+        "failed_to_score": weighted_rate(goals_for == 0),
+        "over_2_5_rate": weighted_rate((goals_for + goals_against) > 2.5),
+        "both_teams_score_rate": weighted_rate((goals_for > 0) & (goals_against > 0)),
+        "source": "team_match_history.csv",
+        "data_quality": "normal",
+        "confidence": "high" if len(team_df) >= 10 else "medium" if len(team_df) >= 5 else "low",
+        "is_estimated": False,
     }
 
 

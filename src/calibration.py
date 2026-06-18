@@ -4,9 +4,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from .config import settings
+
 CALIBRATION_PATH = Path("data/model_calibration.json")
 RESULTS_PATH = Path("data/model_results.csv")
 MIN_CALIBRATION_MATCHES = 20
+VALID_RESULT_SOURCES = {"api_real", "csv_real", "manual"}
 DEFAULT_CALIBRATION = {
     "home_win_factor": 1.0,
     "draw_factor": 1.0,
@@ -49,12 +52,35 @@ def fit_simple_calibration(results_df):
     """
     Ajusta sesgo 1X2 acumulado. No calibra si hay menos de 20 partidos.
     """
+    original_count = 0 if results_df is None else int(len(results_df))
+    if settings.ignore_mock_results_for_calibration and results_df is not None and not results_df.empty:
+        if "result_source" not in results_df.columns:
+            return save_calibration(
+                {
+                    "active": False,
+                    "reason": "Calibracion desactivada: resultados sin fuente valida para calibrar",
+                    "matches_used": 0,
+                }
+            )
+        valid_df = results_df[results_df["result_source"].isin(VALID_RESULT_SOURCES)].copy()
+        mock_count = int((results_df["result_source"] == "mock").sum())
+        if mock_count > len(valid_df):
+            return save_calibration(
+                {
+                    "active": False,
+                    "reason": "Calibracion desactivada: resultados mock no validos para calibrar",
+                    "matches_used": int(len(valid_df)),
+                }
+            )
+        results_df = valid_df
+
     if results_df is None or results_df.empty or len(results_df) < MIN_CALIBRATION_MATCHES:
         return save_calibration(
             {
                 "active": False,
                 "reason": "Calibracion desactivada por muestra pequena",
                 "matches_used": 0 if results_df is None else int(len(results_df)),
+                "total_results_seen": original_count,
             }
         )
 
@@ -129,18 +155,55 @@ def apply_1x2_calibration(probs: dict, calibration: dict) -> dict:
     return {k: v / total for k, v in adjusted.items()}
 
 
+def apply_draw_bias_correction(probs: dict, bias_report: dict) -> dict:
+    if not settings.use_draw_bias_correction or not probs:
+        return probs
+    if bias_report.get("sample_size", 0) < MIN_CALIBRATION_MATCHES:
+        return probs
+    draw_level = bias_report.get("draw_bias_level")
+    if draw_level not in {"Medio", "Alto"}:
+        return probs
+
+    keys = list(probs.keys())
+    home_key = keys[0]
+    draw_key = "Empate"
+    away_key = keys[-1]
+    factor = 0.85 if draw_level == "Alto" else 0.95
+    old_draw = float(probs.get(draw_key, 0) or 0)
+    new_draw = old_draw * factor
+    released = old_draw - new_draw
+    home_prob = float(probs.get(home_key, 0) or 0)
+    away_prob = float(probs.get(away_key, 0) or 0)
+    side_total = home_prob + away_prob
+    corrected = dict(probs)
+    corrected[draw_key] = new_draw
+    if side_total > 0:
+        corrected[home_key] = home_prob + released * (home_prob / side_total)
+        corrected[away_key] = away_prob + released * (away_prob / side_total)
+    total = sum(float(value or 0) for value in corrected.values())
+    return {key: float(value or 0) / total for key, value in corrected.items()} if total > 0 else probs
+
+
 def detect_draw_bias(results_df):
     """
     Compara probabilidad predicha media de empate contra frecuencia real.
     """
+    if results_df is not None and not results_df.empty and settings.ignore_mock_results_for_calibration:
+        if "result_source" not in results_df.columns:
+            results_df = pd.DataFrame()
+        else:
+            results_df = results_df[results_df["result_source"].isin(VALID_RESULT_SOURCES)].copy()
+
     if results_df is None or results_df.empty or len(results_df) < MIN_CALIBRATION_MATCHES:
         return {
             "status": "Sin muestra suficiente",
             "draw_bias": "Sin muestra suficiente",
+            "draw_bias_level": "Sin muestra suficiente",
             "home_bias": "Sin muestra suficiente",
             "away_bias": "Sin muestra suficiente",
             "predicted_draw_rate": None,
             "actual_draw_rate": None,
+            "sample_size": 0 if results_df is None else int(len(results_df)),
         }
 
     pred_draw = results_df["predicted_draw"].astype(float).mean()
@@ -162,13 +225,17 @@ def detect_draw_bias(results_df):
             return "Medio"
         return "Bajo"
 
+    draw_level = level(draw_gap)
+
     return {
         "status": "Evaluado",
-        "draw_bias": "Empate sobreestimado" if draw_gap > 0.06 else level(draw_gap),
+        "draw_bias": "Empate sobreestimado" if draw_gap > 0.06 else draw_level,
+        "draw_bias_level": draw_level,
         "home_bias": "Local sobreestimado" if home_gap > 0.06 else level(home_gap),
         "away_bias": "Visitante subestimado" if away_gap > 0.06 else level(away_gap),
         "predicted_draw_rate": float(pred_draw),
         "actual_draw_rate": float(actual_draw),
+        "sample_size": int(len(results_df)),
     }
 
 

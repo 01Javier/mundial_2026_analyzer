@@ -43,6 +43,14 @@ RECENT_FORM_COLUMNS = [
     "home_ga",
     "away_gf",
     "away_ga",
+    "clean_sheets",
+    "failed_to_score",
+    "over_2_5_rate",
+    "both_teams_score_rate",
+    "source",
+    "last_updated",
+    "is_estimated",
+    "confidence",
 ]
 
 ALIASES = {
@@ -285,14 +293,16 @@ def fallback_recent_form_row(team: str, registry_row: dict | None, defaults: dic
         "wins": 1,
         "draws": 1,
         "losses": 1,
-        "xg_for": round(max(0.75, min(2.20, defaults["xgf"] * (1 + strength_delta))), 2),
-        "xg_against": round(max(0.75, min(2.20, defaults["xga"] * (1 - strength_delta))), 2),
+        "xg_for": None,
+        "xg_against": None,
         "home_gf": round(gf, 2),
         "home_ga": round(ga, 2),
         "away_gf": round(gf * 0.95, 2),
         "away_ga": round(ga * 1.05, 2),
         "source": "registry_fallback",
         "data_quality": "low",
+        "is_estimated": True,
+        "confidence": "low",
         "last_updated": _now_iso(),
     }
 

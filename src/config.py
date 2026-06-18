@@ -20,9 +20,17 @@ class Settings:
     use_mock_data: bool = os.getenv("USE_MOCK_DATA", "true").lower() == "true"
     guatemala_timezone: str = os.getenv("GUATEMALA_TIMEZONE", "America/Guatemala")
     use_dixon_coles: bool = os.getenv("USE_DIXON_COLES", "true").lower() == "true"
-    dixon_coles_rho: float = float(os.getenv("DIXON_COLES_RHO", "-0.05"))
+    dixon_coles_rho: float = float(os.getenv("DIXON_COLES_RHO", "0.0"))
     use_monte_carlo: bool = os.getenv("USE_MONTE_CARLO", "true").lower() == "true"
     monte_carlo_sims: int = int(os.getenv("MONTE_CARLO_SIMS", "20000"))
+    api_provider_priority: str = os.getenv("API_PROVIDER_PRIORITY", "api_football,football_data,csv,mock")
+    allow_api_on_page_load: bool = os.getenv("ALLOW_API_ON_PAGE_LOAD", "false").lower() == "true"
+    max_api_requests_per_run: int = int(os.getenv("MAX_API_REQUESTS_PER_RUN", "20"))
+    team_form_cache_hours: int = int(os.getenv("TEAM_FORM_CACHE_HOURS", "72"))
+    auto_fit_dixon_coles: bool = os.getenv("AUTO_FIT_DIXON_COLES", "true").lower() == "true"
+    disable_dc_if_draw_bias_high: bool = os.getenv("DISABLE_DC_IF_DRAW_BIAS_HIGH", "true").lower() == "true"
+    use_draw_bias_correction: bool = os.getenv("USE_DRAW_BIAS_CORRECTION", "true").lower() == "true"
+    ignore_mock_results_for_calibration: bool = os.getenv("IGNORE_MOCK_RESULTS_FOR_CALIBRATION", "true").lower() == "true"
 
     @property
     def gt_tz(self) -> ZoneInfo:

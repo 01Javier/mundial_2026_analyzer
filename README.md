@@ -88,14 +88,25 @@ python -m streamlit run app.py
 Por defecto, la app no consulta APIs deportivas en cada recarga de `localhost:8501`.
 Primero intenta reutilizar cache local en `data/cache/`, luego CSV locales y finalmente mock data.
 
-Para gastar una llamada real a API-Football o football-data.org, usa el boton **Actualizar datos desde API** en la barra lateral de Streamlit. Si la llamada funciona, la respuesta se guarda en cache y las siguientes recargas leen ese archivo local.
+Para gastar una llamada real a API-Football o football-data.org, usa los botones manuales de la barra lateral de Streamlit. Si la llamada funciona, la respuesta se guarda en cache y las siguientes recargas leen ese archivo local.
 
 La app usa estas fuentes, en este orden:
 
-1. API en vivo, solo si presionas **Actualizar datos desde API**.
-2. Cache local en `data/cache/`.
-3. CSV local `data/worldcup_matches.csv`.
-4. Mock data si `USE_MOCK_DATA=true`.
+1. Cache fresco de API-Football.
+2. API-Football en vivo, solo si presionas **Actualizar fixtures desde API-Football**.
+3. Cache fresco de football-data.org.
+4. football-data.org en vivo, solo como respaldo si API-Football falla y pediste actualizar.
+5. CSV local `data/worldcup_matches.csv`.
+6. Mock data si `USE_MOCK_DATA=true`.
+
+Botones disponibles en la app:
+
+- **Actualizar fixtures desde API-Football**: refresca partidos del Mundial y guarda `data/cache/api_football_fixtures_2026.json` y `data/cache/worldcup_matches_latest.csv`.
+- **Actualizar forma de equipos faltantes desde API-Football**: busca forma reciente real para equipos con fallback.
+- **Actualizar datos reales de estos equipos desde API-Football**: actualiza solo los dos equipos del partido seleccionado.
+- **Actualizar H2H del partido seleccionado**: consulta enfrentamientos directos solo bajo demanda.
+- **Actualizar lesiones del partido seleccionado**: consulta lesiones solo bajo demanda.
+- **Actualizar lineups del partido seleccionado**: solo se permite si el partido esta en curso, ya jugado o dentro de 24 horas.
 
 Archivos de cache:
 
@@ -107,6 +118,21 @@ data/cache/cache_metadata.json
 ```
 
 `cache_metadata.json` guarda proveedor, endpoint, parametros sin credenciales, fecha de cache, vencimiento, archivo fuente, requests ahorrados y ultimo error.
+
+Variables recomendadas en `.env`:
+
+```text
+API_PROVIDER_PRIORITY=api_football,football_data,csv,mock
+ALLOW_API_ON_PAGE_LOAD=false
+MAX_API_REQUESTS_PER_RUN=20
+TEAM_FORM_CACHE_HOURS=72
+USE_DIXON_COLES=true
+DIXON_COLES_RHO=0.0
+AUTO_FIT_DIXON_COLES=true
+DISABLE_DC_IF_DRAW_BIAS_HIGH=true
+USE_DRAW_BIAS_CORRECTION=true
+IGNORE_MOCK_RESULTS_FOR_CALIBRATION=true
+```
 
 ## Seguridad
 
@@ -130,7 +156,7 @@ Si un equipo del catalogo no existe en `data/team_recent_form.csv`, la app agreg
 data/backups/
 ```
 
-Esto permite analizar partidos como Switzerland vs Bosnia-Herzegovina aunque falten datos reales de forma reciente. El modelo marca esos datos como estimados y baja la confianza.
+Esto permite analizar partidos como Switzerland vs Bosnia-Herzegovina aunque falten datos reales de forma reciente. El modelo marca esos datos como estimados, baja la confianza, limita la calibracion y muestra advertencias cuando las lambdas quedan demasiado parecidas por falta de datos.
 
 ## Backtesting y calibracion
 
@@ -154,7 +180,30 @@ La calibracion 1X2 se guarda en:
 data/model_calibration.json
 ```
 
-Si hay menos de 20 partidos evaluados, la calibracion fuerte queda desactivada por muestra pequena. Las probabilidades siempre se normalizan para sumar 1.
+Si hay menos de 20 partidos evaluados reales, la calibracion fuerte queda desactivada por muestra pequena. Las probabilidades siempre se normalizan para sumar 1. Los resultados `mock` no se usan para calibrar.
+
+## Por que salia siempre 1-1
+
+El patron repetido `1-1`, `2-1`, `1-2`, `1-0`, `0-1`, `2-2` aparecia sobre todo cuando:
+
+- Los dos equipos usaban fallback y sus lambdas quedaban casi iguales.
+- Faltaba forma reciente real en `data/team_recent_form.csv`.
+- Un `DIXON_COLES_RHO` negativo podia aumentar demasiado marcadores bajos como 1-1.
+- La calibracion podia activarse con resultados mock o de baja calidad.
+- Faltaban `strength_score`, H2H, lesiones y datos de jugadores.
+
+Ahora el modelo penaliza esos casos con baja confianza, usa `team_strength.csv` para separar equipos cuando hay Elo/ranking, desactiva rho agresivo con poca muestra y no calibra con resultados mock.
+
+## Como mejorar datos reales
+
+1. Configura `API_FOOTBALL_KEY` en `.env`.
+2. Usa `USE_MOCK_DATA=false` si quieres evitar datos simulados.
+3. Abre la app con `python -m streamlit run app.py`.
+4. Presiona **Actualizar fixtures desde API-Football**.
+5. Revisa o reconstruye el catalogo local de equipos.
+6. Presiona **Actualizar datos reales de equipos faltantes** o **Actualizar datos reales de estos equipos desde API-Football**.
+7. Revisa `data/team_recent_form.csv`.
+8. Analiza partidos y confirma en la UI la fuente de forma, H2H, lesiones, jugadores, strength score y calidad de datos.
 
 ## Como mejorar la precision del modelo
 
@@ -165,7 +214,7 @@ Si hay menos de 20 partidos evaluados, la calibracion fuerte queda desactivada p
 - **Calibracion:** ajusta sesgos acumulados de local, empate y visitante solo con muestra suficiente.
 - **Recency weighting:** usa `data/team_match_history.csv` si existe y da mas peso a partidos recientes.
 - **Shrinkage:** mezcla lambdas hacia el promedio global para evitar sobreajustar muestras pequenas.
-- **Fuerza del rival:** usa `data/team_strength.csv` con ajuste limitado a +/-12%.
+- **Fuerza del rival:** usa `data/team_strength.csv` con ajuste limitado a +/-15%.
 - **Monte Carlo:** compara probabilidades directas contra simulacion.
 
 ## Por que no se debe calibrar con un solo partido
@@ -179,7 +228,7 @@ Ghana vs Panama sirve como ejemplo de diagnostico: si Ghana gana 1-0 y el marcad
 Debe tener:
 
 ```csv
-team,matches,goals_for,goals_against,wins,draws,losses,xg_for,xg_against,home_gf,home_ga,away_gf,away_ga
+team,matches,goals_for,goals_against,wins,draws,losses,xg_for,xg_against,home_gf,home_ga,away_gf,away_ga,clean_sheets,failed_to_score,over_2_5_rate,both_teams_score_rate,source,data_quality,last_updated,is_estimated,confidence
 ```
 
 ### `data/player_form.csv`

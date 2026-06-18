@@ -1,15 +1,45 @@
-team,elo,fifa_rank,confederation,strength_score,last_updated
-Argentina,2140,1,CONMEBOL,2140,2026-06-17
-France,2090,2,UEFA,2090,2026-06-17
-England,2030,4,UEFA,2030,2026-06-17
-Portugal,2010,5,UEFA,2010,2026-06-17
-Colombia,1960,12,CONMEBOL,1960,2026-06-17
-Croatia,1910,10,UEFA,1910,2026-06-17
-Senegal,1830,18,CAF,1830,2026-06-17
-Ghana,1710,60,CAF,1710,2026-06-17
-Panama,1660,45,CONCACAF,1660,2026-06-17
-Algeria,1760,43,CAF,1760,2026-06-17
-Congo DR,1640,61,CAF,1640,2026-06-17
-Uzbekistan,1620,58,AFC,1620,2026-06-17
-Austria,1870,22,UEFA,1870,2026-06-17
-Jordan,1500,68,AFC,1500,2026-06-17
+team,canonical_name,elo,fifa_rank,confederation,strength_score,market_value_eur,last_updated,source,confidence
+Argentina,Argentina,2140,1,CONMEBOL,2140,,2026-06-17,seed,medium
+France,France,2090,2,UEFA,2090,,2026-06-17,seed,medium
+England,England,2030,4,UEFA,2030,,2026-06-17,seed,medium
+Portugal,Portugal,2010,5,UEFA,2010,,2026-06-17,seed,medium
+Brazil,Brazil,2050,3,CONMEBOL,2050,,2026-06-17,seed,medium
+Germany,Germany,1990,9,UEFA,1990,,2026-06-17,seed,medium
+Spain,Spain,2020,6,UEFA,2020,,2026-06-17,seed,medium
+Netherlands,Netherlands,1980,7,UEFA,1980,,2026-06-17,seed,medium
+Colombia,Colombia,1960,12,CONMEBOL,1960,,2026-06-17,seed,medium
+Croatia,Croatia,1910,10,UEFA,1910,,2026-06-17,seed,medium
+Uruguay,Uruguay,1950,11,CONMEBOL,1950,,2026-06-17,seed,medium
+Switzerland,Switzerland,1885,17,UEFA,1885,,2026-06-17,seed,medium
+Czechia,Czechia,1785,39,UEFA,1785,,2026-06-17,seed,medium
+South Africa,South Africa,1580,57,CAF,1580,,2026-06-17,seed,medium
+Bosnia and Herzegovina,Bosnia and Herzegovina,1690,69,UEFA,1690,,2026-06-17,seed,medium
+Mexico,Mexico,1840,15,CONCACAF,1840,,2026-06-17,seed,medium
+United States,United States,1810,16,CONCACAF,1810,,2026-06-17,seed,medium
+Canada,Canada,1740,30,CONCACAF,1740,,2026-06-17,seed,medium
+Senegal,Senegal,1830,18,CAF,1830,,2026-06-17,seed,medium
+Ghana,Ghana,1710,60,CAF,1710,,2026-06-17,seed,medium
+Panama,Panama,1660,45,CONCACAF,1660,,2026-06-17,seed,medium
+Algeria,Algeria,1760,43,CAF,1760,,2026-06-17,seed,medium
+Congo DR,Congo DR,1640,61,CAF,1640,,2026-06-17,seed,medium
+Uzbekistan,Uzbekistan,1620,58,AFC,1620,,2026-06-17,seed,medium
+Austria,Austria,1870,22,UEFA,1870,,2026-06-17,seed,medium
+Jordan,Jordan,1500,68,AFC,1500,,2026-06-17,seed,medium
+Australia,Australia,1745,24,AFC,1745,,2026-06-17,seed,medium
+Paraguay,Paraguay,1765,37,CONMEBOL,1765,,2026-06-17,seed,medium
+Turkey,Turkey,1825,26,UEFA,1825,,2026-06-17,seed,medium
+Ecuador,Ecuador,1850,23,CONMEBOL,1850,,2026-06-17,seed,medium
+Morocco,Morocco,1845,14,CAF,1845,,2026-06-17,seed,medium
+Scotland,Scotland,1770,44,UEFA,1770,,2026-06-17,seed,medium
+Qatar,Qatar,1605,53,AFC,1605,,2026-06-17,seed,medium
+South Korea,South Korea,1760,27,AFC,1760,,2026-06-17,seed,medium
+Japan,Japan,1815,20,AFC,1815,,2026-06-17,seed,medium
+Iran,Iran,1775,21,AFC,1775,,2026-06-17,seed,medium
+Tunisia,Tunisia,1685,41,CAF,1685,,2026-06-17,seed,medium
+Egypt,Egypt,1725,36,CAF,1725,,2026-06-17,seed,medium
+Nigeria,Nigeria,1760,31,CAF,1760,,2026-06-17,seed,medium
+Cote d'Ivoire,Cote d'Ivoire,1740,33,CAF,1740,,2026-06-17,seed,medium
+New Zealand,New Zealand,1490,89,OFC,1490,,2026-06-17,seed,medium
+Saudi Arabia,Saudi Arabia,1600,59,AFC,1600,,2026-06-17,seed,medium
+Haiti,Haiti,1455,86,CONCACAF,1455,,2026-06-17,seed,medium
+Curacao,Curacao,1480,82,CONCACAF,1480,,2026-06-17,seed,medium

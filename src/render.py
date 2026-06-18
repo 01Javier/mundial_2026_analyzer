@@ -77,6 +77,41 @@ def render_match_analysis(match: dict, analysis: dict):
     model_cols[3].metric("Cobertura matriz", pct(analysis.get("coverage")))
     if not analysis.get("calibration_active"):
         st.caption("Calibracion desactivada por muestra pequena o datos insuficientes.")
+    st.caption(
+        f"Rho configurado: {analysis.get('configured_rho', 0):.3f} | "
+        f"Rho efectivo: {analysis.get('effective_rho', 0):.3f} | "
+        f"Motivo: {analysis.get('rho_reason', 'N/D')}"
+    )
+
+    for warning in analysis.get("warnings", []):
+        st.warning(warning)
+
+    team_data = analysis.get("team_data", {})
+    h2h_available = analysis.get("h2h") is not None and not analysis.get("h2h").empty
+    injuries_available = analysis.get("injuries") is not None and not analysis.get("injuries").empty
+    players_available = analysis.get("players") is not None and not analysis.get("players").empty
+    with st.expander("Calidad de datos por equipo y contexto"):
+        rows = []
+        for team in [home, away]:
+            data = team_data.get(team, {})
+            rows.append(
+                {
+                    "Equipo": team,
+                    "Fuente de forma": data.get("source", "N/D"),
+                    "Confianza forma": data.get("confidence", "N/D"),
+                    "Fallback": "Si" if data.get("is_fallback") else "No",
+                    "Strength score": "Si" if data.get("strength_available") else "No",
+                }
+            )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.write("H2H disponible:", "Si" if h2h_available else "No")
+        st.write("Lesiones disponibles:", "Si" if injuries_available else "No")
+        st.write("Jugadores disponibles:", "Si" if players_available else "No")
+        if any(item.get("is_fallback") for item in team_data.values()):
+            st.info(
+                "Prediccion basada parcial o totalmente en fallback. "
+                "Usa el boton de API-Football del sidebar para actualizar datos reales del partido."
+            )
 
     evaluation = evaluate_played_match(match, analysis)
     if evaluation:
