@@ -1,0 +1,10 @@
+.env
+.tmp/
+.venv/
+__pycache__/
+*.py[cod]
+
+data/cache/*.json
+data/cache/*.csv
+!data/cache/.gitkeep
+data/backups/*.csv

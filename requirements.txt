@@ -1,0 +1,7 @@
+streamlit>=1.41
+pandas>=2.2.3
+numpy>=2.1
+requests>=2.32
+scipy>=1.14
+python-dotenv>=1.0
+tabulate>=0.9

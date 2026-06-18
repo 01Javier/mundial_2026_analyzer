@@ -1,0 +1,7 @@
+match_id,home,away,group,date_utc,venue,city,status,home_goals,away_goals,source
+mock-1,Argentina,Algeria,J,2026-06-17T01:00:00Z,Kansas City Stadium,Kansas City,Jugado,3,0,CSV local
+mock-2,France,Senegal,I,2026-06-17T00:00:00Z,New York New Jersey Stadium,New York,Jugado,3,1,CSV local
+mock-3,Portugal,Congo DR,K,2026-06-17T17:00:00Z,Houston Stadium,Houston,Jugado,1,1,CSV local
+mock-4,England,Croatia,L,2026-06-17T20:00:00Z,Dallas Stadium,Dallas,Próximo,,,CSV local
+mock-5,Ghana,Panama,L,2026-06-17T23:00:00Z,Toronto Stadium,Toronto,Jugado,1,0,CSV local
+mock-6,Uzbekistan,Colombia,K,2026-06-18T02:00:00Z,Mexico City Stadium,Mexico City,Próximo,,,CSV local
