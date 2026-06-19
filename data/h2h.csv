@@ -1,9 +1,20 @@
 date,home,away,home_goals,away_goals,competition
-2024-06-01,England,Croatia,2,1,Friendly
-2022-11-01,Croatia,England,1,1,Friendly
-2021-06-13,England,Croatia,1,0,Euro
-2018-07-11,Croatia,England,2,1,World Cup
-2016-11-15,England,Croatia,2,2,Friendly
-2023-06-01,Portugal,Congo DR,2,0,Friendly
-2022-09-01,France,Senegal,2,1,Friendly
-2002-05-31,France,Senegal,0,1,World Cup
+2024-06-01,England,Croatia,2.0,1.0,Friendly
+2022-11-01,Croatia,England,1.0,1.0,Friendly
+2021-06-13,England,Croatia,1.0,0.0,Euro
+2018-07-11,Croatia,England,2.0,1.0,World Cup
+2016-11-15,England,Croatia,2.0,2.0,Friendly
+2023-06-01,Portugal,Congo DR,2.0,0.0,Friendly
+2022-09-01,France,Senegal,2.0,1.0,Friendly
+2002-05-31,France,Senegal,0.0,1.0,World Cup
+2026-06-18T16:00:00+00:00,Czechia,South Africa,,,World Cup
+2016-06-08T23:30:00+00:00,Brazil,Haiti,7.0,1.0,Copa America
+2026-06-20T00:30:00+00:00,Brazil,Haiti,,,World Cup
+2026-06-20T20:00:00+00:00,Germany,Ivory Coast,,,World Cup
+2026-06-21T16:00:00+00:00,Spain,Saudi Arabia,,,World Cup
+2018-06-24T12:00:00+00:00,England,Panama,6.0,1.0,World Cup
+2026-06-27T21:00:00+00:00,Panama,England,,,World Cup
+2018-06-23T15:00:00+00:00,South Korea,Mexico,1.0,2.0,World Cup
+2020-11-14T20:00:00+00:00,Mexico,South Korea,3.0,2.0,Friendlies
+2025-09-10T01:30:00+00:00,Mexico,South Korea,2.0,2.0,Friendlies
+2026-06-19T01:00:00+00:00,Mexico,South Korea,1.0,0.0,World Cup

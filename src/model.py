@@ -17,6 +17,7 @@ from .data_sources import (
 )
 from .team_strength import get_team_strength, strength_adjustment as team_strength_adjustment
 from .utils import clamp, confidence_label, poisson_first_goal_probs, safe_int
+from .web_enrichment import summarize_web_enrichment
 
 HOST_TEAMS = {
     "united states", "usa", "estados unidos",
@@ -154,7 +155,7 @@ def build_fallback_form(team: str, opponent: str, reason: str):
     }
 
 
-def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
+def estimate_team_lambda_advanced(team, opponent, match, is_home_side, web_summary: dict | None = None):
     """
     Estima lambda con xG, goles, shrinkage, fuerza rival, sede y robustez ante muestras pequenas.
     """
@@ -181,9 +182,13 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
 
     team_gf = float(team_form.get("gf_per_match") or 0)
     opp_ga = float(opp_form.get("ga_per_match") or 0)
+    web_summary = web_summary or {}
+    web_xg = web_summary.get("xg_home") if is_home_side else web_summary.get("xg_away")
+
     team_xg = team_form.get("xg_for")
     opp_xga = opp_form.get("xg_against")
     has_xg = team_xg is not None and opp_xga is not None
+    has_web_xg = team_xg is None and web_xg is not None
 
     if has_xg:
         base_lambda = (
@@ -193,6 +198,26 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
             0.20 * opp_ga
         )
         method = "xG/xGA + goles + shrinkage"
+    elif has_web_xg:
+        web_source_count = int(web_summary.get("source_count", 0) or 0)
+        opp_xga_component = float(opp_xga) if opp_xga is not None else global_average_goals()
+        if web_source_count >= settings.web_confidence_min_sources:
+            base_lambda = (
+                0.35 * float(web_xg) +
+                0.25 * opp_xga_component +
+                0.20 * team_gf +
+                0.20 * opp_ga
+            )
+            method = "xG web + goles + shrinkage"
+        else:
+            base_lambda = (
+                0.20 * float(web_xg) +
+                0.35 * team_gf +
+                0.30 * opp_ga +
+                0.15 * global_average_goals()
+            )
+            method = "xG web fuente unica + goles + shrinkage"
+        factors.append(f"{team}: xG externo web usado con fuente trazable.")
     else:
         over_values = [
             value
@@ -277,6 +302,8 @@ def estimate_team_lambda_advanced(team, opponent, match, is_home_side):
             "team_form": team_form,
             "opp_form": opp_form,
             "has_xg": has_xg,
+            "has_web_xg": has_web_xg,
+            "xg_source": "web" if has_web_xg else "csv" if has_xg else None,
             "sample_weight": sample_weight,
             "base_lambda": base_lambda,
             "global_avg_goals": avg_goals,
@@ -373,6 +400,183 @@ def apply_context_adjustments(lambda_home, lambda_away, match, injuries):
                 pass
 
     return clamp(lambda_home, 0.15, 4.50), clamp(lambda_away, 0.15, 4.50), factors
+
+
+def apply_web_fact_adjustments(lambda_home, lambda_away, match, web_summary: dict):
+    facts = web_summary.get("facts_df")
+    if facts is None or facts.empty:
+        return lambda_home, lambda_away, []
+
+    home = match["home"]
+    away = match["away"]
+    factors = []
+    home_adjust = 0.0
+    away_adjust = 0.0
+
+    for _, row in facts.sort_values("confidence", ascending=False).head(12).iterrows():
+        fact_type = str(row.get("fact_type", ""))
+        team = str(row.get("team", "") or "")
+        value = str(row.get("value", "") or "")
+        domain = str(row.get("source_domain", "web") or "web")
+        lower = value.lower()
+
+        if fact_type not in {"injury", "doubt", "lineup", "key_player"} or not team:
+            continue
+
+        if fact_type == "injury":
+            delta = -0.06
+            if any(word in lower for word in ["goalkeeper", "keeper", "defender", "centre-back", "portero", "defensa"]):
+                if team.lower() == home.lower():
+                    away_adjust += 0.04
+                elif team.lower() == away.lower():
+                    home_adjust += 0.04
+            if team.lower() == home.lower():
+                home_adjust += delta
+            elif team.lower() == away.lower():
+                away_adjust += delta
+            factors.append(f"Web: baja/lesion en {team} segun {domain}; ajuste ofensivo moderado.")
+        elif fact_type == "doubt":
+            delta = -0.03
+            if team.lower() == home.lower():
+                home_adjust += delta
+            elif team.lower() == away.lower():
+                away_adjust += delta
+            factors.append(f"Web: duda en {team} segun {domain}; ajuste ofensivo suave.")
+        elif fact_type in {"lineup", "key_player"} and any(word in lower for word in ["starts", "starting", "confirmed", "titular"]):
+            delta = 0.03
+            if team.lower() == home.lower():
+                home_adjust += delta
+            elif team.lower() == away.lower():
+                away_adjust += delta
+            factors.append(f"Web: nota de alineacion/jugador clave en {team} segun {domain}; ajuste +3%.")
+
+    home_adjust = clamp(home_adjust, -0.10, 0.10)
+    away_adjust = clamp(away_adjust, -0.10, 0.10)
+    return (
+        clamp(lambda_home * (1 + home_adjust), 0.15, 4.50),
+        clamp(lambda_away * (1 + away_adjust), 0.15, 4.50),
+        factors[:4],
+    )
+
+
+def blend_model_with_market(model_probs: dict, market_probs: dict, data_score: float) -> dict:
+    """
+    Mezcla probabilidades del modelo con consenso de mercado sin tratar odds como verdad absoluta.
+    """
+    if not model_probs or not market_probs:
+        return model_probs
+    if set(model_probs.keys()) != set(market_probs.keys()):
+        return model_probs
+
+    if data_score < 0.65:
+        market_weight = 0.35
+    elif data_score <= 0.85:
+        market_weight = 0.20
+    else:
+        market_weight = 0.10
+
+    blended = {
+        key: (1 - market_weight) * float(model_probs.get(key, 0) or 0) + market_weight * float(market_probs.get(key, 0) or 0)
+        for key in model_probs
+    }
+    total = sum(blended.values())
+    return {key: value / total for key, value in blended.items()} if total > 0 else model_probs
+
+
+def calculate_data_quality_score(match, analysis, web_summary):
+    home_info = analysis.get("home_info", {})
+    away_info = analysis.get("away_info", {})
+    h2h = analysis.get("h2h")
+    injuries = analysis.get("injuries")
+    players = analysis.get("players")
+    coverage = float(analysis.get("coverage", 1.0) or 1.0)
+    source_count = int(web_summary.get("source_count", 0) or 0)
+    web_confidence = float(web_summary.get("confidence", 0) or 0)
+    enough_web = source_count >= settings.web_confidence_min_sources and web_confidence >= 0.55
+
+    positives = []
+    negatives = []
+    score = 0.40
+    both_fallback = bool(home_info.get("is_fallback") and away_info.get("is_fallback"))
+
+    if not home_info.get("is_fallback") and not away_info.get("is_fallback"):
+        score += 0.25
+        positives.append("forma real para ambos equipos")
+    elif not home_info.get("is_fallback") or not away_info.get("is_fallback"):
+        score += 0.12
+        positives.append("forma real parcial")
+    else:
+        negatives.append("fallback en ambos equipos")
+
+    has_xg = home_info.get("has_xg") or away_info.get("has_xg") or web_summary.get("xg_home") is not None or web_summary.get("xg_away") is not None
+    if has_xg:
+        score += 0.15 if enough_web or home_info.get("has_xg") or away_info.get("has_xg") else 0.05
+        positives.append("xG disponible en CSV/API o web")
+    else:
+        negatives.append("sin xG/xGA")
+
+    if h2h is not None and not h2h.empty:
+        score += 0.10
+        positives.append("H2H local disponible")
+    elif web_summary.get("h2h_summary") and enough_web:
+        score += 0.10
+        positives.append("H2H externo con fuentes web")
+    else:
+        negatives.append("sin H2H")
+
+    has_injuries = injuries is not None and not injuries.empty
+    has_web_news = bool(web_summary.get("injuries_home") or web_summary.get("injuries_away"))
+    if has_injuries or (has_web_news and enough_web):
+        score += 0.10
+        positives.append("lesiones/dudas disponibles")
+    else:
+        negatives.append("sin lesiones/dudas")
+
+    has_players = players is not None and not players.empty
+    has_web_lineups = bool(web_summary.get("lineups_notes"))
+    if has_players or (has_web_lineups and enough_web):
+        score += 0.10
+        positives.append("jugadores o lineups disponibles")
+    else:
+        negatives.append("sin jugadores/lineups")
+
+    if web_summary.get("market_probs") and enough_web:
+        score += 0.10
+        positives.append("consenso de mercado disponible")
+    elif web_summary.get("market_probs") and source_count == 1:
+        score += 0.05
+        positives.append("mercado web con una fuente")
+    else:
+        negatives.append("sin odds/mercado")
+
+    if home_info.get("strength_available") and away_info.get("strength_available"):
+        score += 0.10
+        positives.append("strength score disponible")
+    else:
+        negatives.append("strength score incompleto")
+
+    if coverage < 0.97:
+        score -= 0.05
+        negatives.append("cobertura de matriz incompleta")
+
+    if source_count == 1:
+        score = min(score, 0.05 + (0.50 if both_fallback else score))
+    if both_fallback and source_count < settings.web_confidence_min_sources:
+        score = min(score, 0.55)
+
+    score = clamp(score, 0.25, 1.0)
+    if score >= 0.80:
+        level = "alta"
+    elif score >= 0.60:
+        level = "media"
+    else:
+        level = "baja"
+    return {
+        "score": score,
+        "razones_positivas": positives,
+        "razones_negativas": negatives,
+        "nivel": level,
+    }
 
 def fit_or_select_dixon_coles_rho(results_df: pd.DataFrame) -> tuple[float, str]:
     if not settings.use_dixon_coles:
@@ -602,9 +806,22 @@ def pressure_factor(match):
 def analyze_match(match: dict) -> dict:
     home = match["home"]
     away = match["away"]
+    web_summary = summarize_web_enrichment(match)
 
-    lambda_home, missing_home, home_info = estimate_team_lambda_advanced(home, away, match, is_home_side=True)
-    lambda_away, missing_away, away_info = estimate_team_lambda_advanced(away, home, match, is_home_side=False)
+    lambda_home, missing_home, home_info = estimate_team_lambda_advanced(
+        home,
+        away,
+        match,
+        is_home_side=True,
+        web_summary=web_summary,
+    )
+    lambda_away, missing_away, away_info = estimate_team_lambda_advanced(
+        away,
+        home,
+        match,
+        is_home_side=False,
+        web_summary=web_summary,
+    )
 
     missing = sorted(set(missing_home + missing_away))
 
@@ -619,6 +836,7 @@ def analyze_match(match: dict) -> dict:
 
     injuries = get_injuries(home, away)
     lambda_home, lambda_away, context_factors = apply_context_adjustments(lambda_home, lambda_away, match, injuries)
+    lambda_home, lambda_away, web_factors = apply_web_fact_adjustments(lambda_home, lambda_away, match, web_summary)
 
     backtest_summary = load_backtest_summary()
     bias_report = detect_draw_bias(backtest_summary["results_df"])
@@ -643,35 +861,47 @@ def analyze_match(match: dict) -> dict:
         "Empate": p_draw,
         away: p_away,
     }
-    calibration = load_calibration()
-    winner_probs = apply_1x2_calibration(direct_winner_probs, calibration)
-    winner_probs = apply_draw_bias_correction(winner_probs, bias_report)
 
     p_home_first, p_away_first, p_no_goal = poisson_first_goal_probs(lambda_home, lambda_away)
 
     player_df = get_player_form(home, away)
     player_candidates = player_first_goal_candidates(player_df, home, away, p_home_first, p_away_first)
 
+    h2h = get_h2h(home, away)
+    quality = calculate_data_quality_score(
+        match,
+        {
+            "home_info": home_info,
+            "away_info": away_info,
+            "h2h": h2h,
+            "injuries": injuries,
+            "players": player_df,
+            "coverage": coverage,
+        },
+        web_summary,
+    )
+    data_score = quality["score"]
+
+    calibration = load_calibration()
+    winner_probs = apply_1x2_calibration(direct_winner_probs, calibration)
+    winner_probs = apply_draw_bias_correction(winner_probs, bias_report)
+    pre_market_winner_probs = dict(winner_probs)
+    market_probs = web_summary.get("market_probs", {})
+    market_adjusted = bool(
+        market_probs
+        and web_summary.get("source_count", 0) >= settings.web_confidence_min_sources
+        and web_summary.get("confidence", 0) >= 0.55
+    )
+    if market_adjusted:
+        winner_probs = blend_model_with_market(winner_probs, market_probs, data_score)
+
     predicted_winner = max(winner_probs, key=winner_probs.get)
     predicted_prob = winner_probs[predicted_winner]
-
-    h2h = get_h2h(home, away)
-
-    data_score = 1.0
-    if missing:
-        data_score -= 0.25
-    if h2h.empty:
-        data_score -= 0.10
-    if injuries.empty:
-        data_score -= 0.05
-    if player_df.empty:
-        data_score -= 0.10
-    if coverage < 0.97:
-        data_score -= 0.05
-    if both_fallback:
-        data_score = min(data_score, 0.50)
-
-    data_score = clamp(data_score, 0.25, 1.0)
+    confidence = (
+        "BAJA"
+        if both_fallback and web_summary.get("source_count", 0) < settings.web_confidence_min_sources
+        else confidence_label(data_score)
+    )
     warnings = []
     if both_fallback:
         warnings.append("Predicción basada en fallback. No usar como pronóstico fuerte.")
@@ -679,6 +909,9 @@ def analyze_match(match: dict) -> dict:
         warnings.append(
             "El modelo igualó demasiado a los equipos por falta de datos; considera actualizar forma real desde API-Football."
         )
+
+    if web_summary.get("source_count", 0) == 1:
+        warnings.append("Enriquecimiento web con una sola fuente: impacto limitado por baja confirmacion.")
 
     factors = [
         f"Expectativa de goles: {home} {lambda_home:.2f} vs {away} {lambda_away:.2f}.",
@@ -690,6 +923,7 @@ def analyze_match(match: dict) -> dict:
     factors.extend(home_info.get("advanced_factors", [])[:2])
     factors.extend(away_info.get("advanced_factors", [])[:2])
     factors.extend(context_factors)
+    factors.extend(web_factors)
     factors.extend(warnings)
 
     monte_carlo = None
@@ -711,6 +945,9 @@ def analyze_match(match: dict) -> dict:
         "top_results": top_results,
         "winner_probs": winner_probs,
         "direct_winner_probs": direct_winner_probs,
+        "pre_market_winner_probs": pre_market_winner_probs,
+        "market_probs": market_probs,
+        "market_adjusted": market_adjusted,
         "first_goal": {
             home: p_home_first,
             away: p_away_first,
@@ -719,8 +956,9 @@ def analyze_match(match: dict) -> dict:
         "player_first_goal": player_candidates,
         "predicted_winner": predicted_winner,
         "predicted_prob": predicted_prob,
-        "confidence": confidence_label(data_score),
+        "confidence": confidence,
         "data_score": data_score,
+        "data_quality": quality,
         "factors": factors[:8],
         "missing": missing,
         "h2h": h2h,
@@ -736,18 +974,21 @@ def analyze_match(match: dict) -> dict:
         "monte_carlo": monte_carlo,
         "warnings": warnings,
         "bias_report": bias_report,
+        "web_summary": web_summary,
         "team_data": {
             home: {
                 "source": home_info.get("form_source", "N/D"),
                 "confidence": home_info.get("form_confidence", "N/D"),
                 "is_fallback": home_info.get("is_fallback", False),
                 "strength_available": home_info.get("strength_available", False),
+                "xg_source": home_info.get("xg_source"),
             },
             away: {
                 "source": away_info.get("form_source", "N/D"),
                 "confidence": away_info.get("form_confidence", "N/D"),
                 "is_fallback": away_info.get("is_fallback", False),
                 "strength_available": away_info.get("strength_available", False),
+                "xg_source": away_info.get("xg_source"),
             },
         },
     }

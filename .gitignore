@@ -6,5 +6,6 @@ __pycache__/
 
 data/cache/*.json
 data/cache/*.csv
+data/cache/web_search/
 !data/cache/.gitkeep
 data/backups/

@@ -5,3 +5,6 @@ requests>=2.32
 scipy>=1.14
 python-dotenv>=1.0
 tabulate>=0.9
+tavily-python>=0.5
+beautifulsoup4>=4.12
+lxml>=5.0

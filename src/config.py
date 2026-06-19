@@ -31,6 +31,23 @@ class Settings:
     disable_dc_if_draw_bias_high: bool = os.getenv("DISABLE_DC_IF_DRAW_BIAS_HIGH", "true").lower() == "true"
     use_draw_bias_correction: bool = os.getenv("USE_DRAW_BIAS_CORRECTION", "true").lower() == "true"
     ignore_mock_results_for_calibration: bool = os.getenv("IGNORE_MOCK_RESULTS_FOR_CALIBRATION", "true").lower() == "true"
+    web_search_provider: str = os.getenv("WEB_SEARCH_PROVIDER", "tavily")
+    tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
+    serpapi_api_key: str = os.getenv("SERPAPI_API_KEY", "")
+    enable_web_enrichment: bool = os.getenv("ENABLE_WEB_ENRICHMENT", "true").lower() == "true"
+    allow_web_search_on_page_load: bool = os.getenv("ALLOW_WEB_SEARCH_ON_PAGE_LOAD", "false").lower() == "true"
+    web_search_cache_hours: int = int(os.getenv("WEB_SEARCH_CACHE_HOURS", "24"))
+    max_web_searches_per_run: int = int(os.getenv("MAX_WEB_SEARCHES_PER_RUN", "5"))
+    web_confidence_min_sources: int = int(os.getenv("WEB_CONFIDENCE_MIN_SOURCES", "2"))
+    web_allowed_domains: str = os.getenv(
+        "WEB_ALLOWED_DOMAINS",
+        "fifa.com,espn.com,skysports.com,theanalyst.com,lineups.com,fotmob.com,"
+        "sofascore.com,flashscore.com,sportsmole.co.uk,wincomparator.com,oddschecker.com,squawka.com",
+    )
+    web_blocked_domains: str = os.getenv(
+        "WEB_BLOCKED_DOMAINS",
+        "reddit.com,facebook.com,twitter.com,x.com,tiktok.com",
+    )
 
     @property
     def gt_tz(self) -> ZoneInfo:

@@ -113,6 +113,48 @@ def render_match_analysis(match: dict, analysis: dict):
                 "Usa el boton de API-Football del sidebar para actualizar datos reales del partido."
             )
 
+    web_summary = analysis.get("web_summary", {})
+    web_facts = web_summary.get("facts_df")
+    with st.expander("Enriquecimiento web"):
+        source_count = int(web_summary.get("source_count", 0) or 0)
+        web_cols = st.columns(6)
+        web_cols[0].metric("Fuentes", source_count)
+        web_cols[1].metric("xG externo", "Si" if web_summary.get("xg_home") is not None or web_summary.get("xg_away") is not None else "No")
+        web_cols[2].metric("Odds externas", "Si" if web_summary.get("market_probs") else "No")
+        web_cols[3].metric("Noticias", "Si" if web_summary.get("injuries_home") or web_summary.get("injuries_away") else "No")
+        web_cols[4].metric("H2H externo", "Si" if web_summary.get("h2h_summary") else "No")
+        web_cols[5].metric("Confianza web", web_summary.get("confidence_label", "baja"))
+        st.write("Ultima busqueda:", web_summary.get("last_search") or "N/D")
+        st.write(
+            "Probabilidades ajustadas con consenso de mercado:",
+            "Si" if analysis.get("market_adjusted") else "No",
+        )
+
+        if web_facts is not None and not web_facts.empty:
+            display = web_facts.copy()
+            display["confianza"] = pd.to_numeric(display["confidence"], errors="coerce").fillna(0).map(lambda value: f"{value:.2f}")
+            display = display.rename(
+                columns={
+                    "fact_type": "dato",
+                    "value": "valor",
+                    "team": "equipo",
+                    "source_domain": "fuente",
+                    "source_url": "URL",
+                }
+            )
+            st.dataframe(
+                display[["dato", "valor", "equipo", "fuente", "confianza", "URL"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.caption("Sin hechos web guardados para este partido. Usa el boton manual del sidebar para buscar.")
+
+        quality = analysis.get("data_quality", {})
+        if quality:
+            st.write("Razones positivas:", ", ".join(quality.get("razones_positivas", [])) or "N/D")
+            st.write("Razones negativas:", ", ".join(quality.get("razones_negativas", [])) or "N/D")
+
     evaluation = evaluate_played_match(match, analysis)
     if evaluation:
         if evaluation["score_rank"]:
@@ -231,3 +273,10 @@ def render_match_analysis(match: dict, analysis: dict):
 
     for s in sources:
         st.markdown(f"- {s}")
+
+    if web_facts is not None and not web_facts.empty:
+        st.markdown("#### Fuentes web guardadas")
+        for _, row in web_facts.drop_duplicates(subset=["source_url"]).head(8).iterrows():
+            title = str(row.get("source_title") or row.get("source_domain") or "Fuente web")
+            url = str(row.get("source_url") or "")
+            st.markdown(f"- [{title}]({url})")

@@ -107,6 +107,7 @@ Botones disponibles en la app:
 - **Actualizar H2H del partido seleccionado**: consulta enfrentamientos directos solo bajo demanda.
 - **Actualizar lesiones del partido seleccionado**: consulta lesiones solo bajo demanda.
 - **Actualizar lineups del partido seleccionado**: solo se permite si el partido esta en curso, ya jugado o dentro de 24 horas.
+- **Buscar datos web de este partido**: usa Tavily o SerpAPI solo bajo demanda para enriquecer xG, odds, H2H, lesiones, lineups y notas de previa.
 
 Archivos de cache:
 
@@ -132,7 +133,77 @@ AUTO_FIT_DIXON_COLES=true
 DISABLE_DC_IF_DRAW_BIAS_HIGH=true
 USE_DRAW_BIAS_CORRECTION=true
 IGNORE_MOCK_RESULTS_FOR_CALIBRATION=true
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=
+SERPAPI_API_KEY=
+ENABLE_WEB_ENRICHMENT=true
+ALLOW_WEB_SEARCH_ON_PAGE_LOAD=false
+WEB_SEARCH_CACHE_HOURS=24
+MAX_WEB_SEARCHES_PER_RUN=5
+WEB_CONFIDENCE_MIN_SOURCES=2
+WEB_ALLOWED_DOMAINS=fifa.com,espn.com,skysports.com,theanalyst.com,lineups.com,fotmob.com,sofascore.com,flashscore.com,sportsmole.co.uk,wincomparator.com,oddschecker.com,squawka.com
+WEB_BLOCKED_DOMAINS=reddit.com,facebook.com,twitter.com,x.com,tiktok.com
 ```
+
+## Enriquecimiento web manual
+
+La capa web complementa a API-Football, no la reemplaza. Sirve para buscar previews, xG publicado, lesiones, alineaciones probables, cuotas, H2H y noticias. No se ejecuta al abrir ni recargar Streamlit: solo corre si presionas **Buscar datos web de este partido**.
+
+Resultados guardados:
+
+```text
+data/cache/web_search/
+data/web_facts.csv
+```
+
+Cada hecho web guarda `source_url`, dominio, confianza y fecha. La app no usa redes sociales, Reddit, foros ni dominios bloqueados. Si una fuente solo contiene una prediccion sin dato concreto, se guarda como `source_note` o `market_consensus`, no como lesion/xG real.
+
+## Calidad de datos
+
+El `data_score` sube por capas reales:
+
+- Forma real de ambos equipos desde API/CSV.
+- xG desde CSV/API o xG externo con fuente clara.
+- H2H local o web.
+- Lesiones/dudas.
+- Jugadores/lineups.
+- Odds o consenso de mercado.
+- Strength score.
+
+Si ambos equipos siguen en fallback y no hay al menos 2 fuentes web confiables, la calidad queda limitada y la confianza se muestra baja.
+
+## Por que la calidad queda en 0.50
+
+Normalmente ocurre porque:
+
+- Ambos equipos usan `registry_fallback`.
+- No hay H2H local.
+- No hay lesiones/dudas.
+- No hay jugadores o lineups.
+- Falta xG/xGA.
+- No existen `web_facts` guardados para el partido.
+
+## Como subir la calidad de datos
+
+1. Configura `API_FOOTBALL_KEY`.
+2. Pon `USE_MOCK_DATA=false` si quieres evitar datos simulados.
+3. Presiona **Actualizar fixtures desde API-Football**.
+4. Revisa o reconstruye el catalogo de equipos.
+5. Presiona **Actualizar forma de equipos faltantes desde API-Football**.
+6. Entra a un partido concreto.
+7. Presiona **Buscar datos web de este partido**.
+8. Revisa el panel **Enriquecimiento web**.
+9. Analiza nuevamente el partido.
+
+## Control de costos
+
+API-Football Free suele tener limite diario y Tavily/SerPAPI pueden tener creditos limitados. Por eso:
+
+- No hay llamadas API/web al recargar.
+- Cada consulta requiere boton manual.
+- Las respuestas se guardan en `data/cache/`.
+- Las busquedas web frescas se reutilizan durante `WEB_SEARCH_CACHE_HOURS`.
+- `MAX_API_REQUESTS_PER_RUN` y `MAX_WEB_SEARCHES_PER_RUN` limitan gasto por ejecucion.
 
 ## Seguridad
 
@@ -247,6 +318,12 @@ player,team,status,impact,source_url
 
 ```csv
 date,home,away,home_goals,away_goals,competition
+```
+
+### `data/web_facts.csv`
+
+```csv
+match_id,home,away,fact_type,value,numeric_value,team,player,source_title,source_url,source_domain,confidence,extracted_at
 ```
 
 ### `data/stadiums.csv`

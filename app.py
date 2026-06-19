@@ -16,12 +16,16 @@ from src.data_sources import fetch_sports_data
 from src.model import analyze_match
 from src.render import format_match_table, render_match_analysis
 from src.team_registry import get_missing_teams_in_recent_form, load_worldcup_teams, refresh_local_team_catalog
+from src.web_enrichment import extract_web_facts, save_web_facts, search_match_web
 
 st.set_page_config(
     page_title="Analizador Mundial 2026",
     page_icon="⚽",
     layout="wide",
 )
+
+if "web_searches_used" not in st.session_state:
+    st.session_state["web_searches_used"] = 0
 
 st.title("⚽ Analizador estadístico — Mundial FIFA 2026")
 st.caption(
@@ -36,6 +40,14 @@ with st.sidebar:
     st.write("API-Football:", "✅ configurado" if settings.api_football_key else "❌ sin key")
     st.write("football-data.org:", "✅ configurado" if settings.football_data_token else "❌ sin token")
     st.write("Max requests por ejecución:", settings.max_api_requests_per_run)
+    st.write("Web enrichment:", "Activo" if settings.enable_web_enrichment else "Inactivo")
+    st.write("Proveedor web:", settings.web_search_provider)
+    if settings.web_search_provider.lower() == "serpapi":
+        st.write("SerpAPI:", "configurado" if settings.serpapi_api_key else "sin key")
+    else:
+        st.write("Tavily:", "configurado" if settings.tavily_api_key else "sin key")
+    st.write("Max busquedas web por ejecucion:", settings.max_web_searches_per_run)
+    st.write("Busquedas web usadas en sesion:", st.session_state["web_searches_used"])
     st.caption("Las credenciales no se muestran ni se guardan en cache.")
     refresh_from_api = st.button(
         "Actualizar fixtures desde API-Football",
@@ -76,6 +88,8 @@ matches_df, sources_used, errors = fetch_sports_data("fixtures", refresh=refresh
 
 if sources_used:
     st.success("Fuente de partidos: " + ", ".join(sources_used))
+    if settings.api_football_key and any("football-data" in str(source).lower() for source in sources_used):
+        st.info("API-Football esta configurado, pero el cache disponible es de football-data.org. Usa el boton 'Actualizar fixtures desde API-Football' para priorizarlo.")
 
 backtest_summary = load_backtest_summary()
 calibration = fit_simple_calibration(backtest_summary["results_df"])
@@ -259,6 +273,10 @@ with st.sidebar:
     update_selected_h2h = st.button("Actualizar H2H del partido seleccionado")
     update_selected_injuries = st.button("Actualizar lesiones del partido seleccionado")
     update_selected_lineups = st.button("Actualizar lineups del partido seleccionado")
+    search_selected_web = st.button(
+        "Buscar datos web de este partido",
+        help="Usa Tavily/SerpAPI solo bajo demanda y guarda resultados en cache local.",
+    )
 
 if update_selected_forms:
     teams = [selected_match_for_updates["home"], selected_match_for_updates["away"]]
@@ -332,6 +350,22 @@ if update_selected_lineups:
                 )
             except Exception as exc:
                 st.error(f"No se pudieron actualizar lineups desde API-Football: {exc}")
+
+if search_selected_web:
+    try:
+        results = search_match_web(selected_match_for_updates, force_refresh=True)
+        searches_used_now = len({item.get("query") for item in results if not item.get("from_cache")})
+        st.session_state["web_searches_used"] += searches_used_now
+        facts = extract_web_facts(selected_match_for_updates, results)
+        save_web_facts(facts)
+        st.success(
+            f"Busqueda web completada. Resultados: {len(results)}. "
+            f"Hechos guardados: {len(facts)}. Busquedas nuevas: {searches_used_now}."
+        )
+        if not facts:
+            st.info("No se encontraron datos estructurados claros; se guardo cache raw para no repetir busquedas.")
+    except Exception as exc:
+        st.error(f"No se pudo buscar/enriquecer datos web: {exc}")
 
 st.markdown("## PASO 2 — RECOLECCIÓN DE DATOS")
 st.write(
